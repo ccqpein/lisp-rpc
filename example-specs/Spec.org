@@ -1,0 +1,116 @@
+* Spec
+
+** Plain mode
+
+client just send the Lisp type data (pure string) to server. Server get the data and return the result.
+
+It should be ~(data-name &keywords)~
+
+#+begin_src lisp
+  (get-book :title "hello world" :version "1984")
+#+end_src
+
+this means server receive the ~get-book~ call and receive the titles and versions as the arguments
+
+server should do the parsing job and handle the call
+
+the return format can be
+
+#+begin_src lisp
+  (book-info :result "aaa")
+#+end_src
+
+~book-info~ is the response data name. And the response format is same as request. They are ~data~ type.
+
+*** Nest data
+
+the root data (request or response) has to be ~(data-name &keywords)~ (data type). but it can have some nesty data as the value of keyword.
+
+the value of keyword can be the ~data~, ~list~, or ~map~.
+
+*data*:
+
+#+begin_src lisp
+  (get-book :some-keyword (sub-name-data :a 1 :b 2))
+#+end_src
+
+list and map have to have *quote* (~'~) symbol. list just a list, map is the keyword-value pairs. (like data, but without the name)
+
+#+begin_src lisp
+  (get-sum-number :argumets '(1 2 3))
+#+end_src
+
+and
+
+#+begin_src lisp
+  (get-sum-number :argumets '(:first 1 :second 2 :third 3))
+#+end_src
+
+
+** Spec mode
+
+this mode will generate the client and server lib for other use. It give the more standard of api, pre-check, and some useful functions.
+
+it should look like:
+
+#+begin_src lisp
+  (def-msg language-perfer :lang 'string)
+
+  (def-msg book-info
+    :lang 'language-perfer
+    :title 'string
+    :version 'string
+    :id 'string)
+
+  (def-rpc get-book
+      (:title 'string :vesion 'string :lang (:lang 'string :encoding 'number))
+    'book-info)
+#+end_src
+
+if will generate the client/server libs. Client just given the data struct which can generate the data that send to server like plain mode:
+
+#+begin_src lisp
+  (get-book :title "hello world" :version "1984" :lang (:lang "english" :encoding 77))
+#+end_src
+
+return the response ~book-info~
+
+#+begin_src lisp
+  (book-info :id "123" :title "hello world" :version "1984" :lang (language-perfer :lang "english"))
+#+end_src
+
+server side also can use the data struct but parse the data to the languages' struct
+
+for define the list type, it should be. The first element should be un-quoted list
+
+#+begin_src lisp
+  (def-msg language-perfers :langs '(list 'string))
+#+end_src
+
+** Types
+
+In [[*Nest data][Nest data]], it shows the all data types lisp rpc support:
+
++ data
+  ex: (data-name :keyword-1 value1 :keyword-2 value2)
++ list
+  ex: '(1 2 3 4)
++ map
+  ex: '(:first 1 :second 2 :third 3)
+
+primary types:
+
++ string
++ number
+
+  
+*** Define the type
+
+in root level, we can only define the ~data~ and ~rpc~ type with ~def-rpc~ and ~def-msg~.
+
+list and map type can only be define anonymously. Ex.
+
+#+begin_src lisp
+  (def-msg language-perfers :langs (list 'string)) ;; list type define for :langs
+  (def-msg user :name (:first 'string :second 'string)) ;; map type define for :name
+#+end_src

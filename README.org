@@ -1,0 +1,28 @@
+* README
+
+** file structure
+
+#+begin_quote
++ lisp-rpc
+  + parsers (for parsing the lisp pure string data to some std data type of the language)
+    + rust
+    + golang
+    + etc.
+  + generater (use parsers and spec file to generate client/server lib code)
+    + lisp (the one for myself to developing)
+    + golang
+    + rust
+    + etc.
+  + templates (templates for generator using to generate libs)
+    + rust
+      + Cargo.toml
+      + etc.
+    + golang
+      + go.mod
+      + etc.
+    + etc.
+#+end_quote
+
+** some optimize ideas
+
+- [ ] parser need to read the dyn impl struct rather than the vecdeque

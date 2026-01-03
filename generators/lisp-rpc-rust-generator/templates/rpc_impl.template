@@ -1,0 +1,17 @@
+impl ToRPCData for {{ name }} {
+    fn to_rpc(&self) -> String {
+        format!(
+            "{%- if ty == "data" -%}
+                ({{ data_name }}{% if fields | length > 0 %} {% endif %}{%- for field in fields %}:{{ field.key_name }} {}{%- if not loop.last %} {% endif %}{%- endfor %})
+            {%- elif ty == "list" or ty == "map" -%}
+                '({%- for field in fields %}:{{ field.key_name }} {}{%- if not loop.last %} {% endif %}{%- endfor %})
+            {%- else -%}
+                {# Default case or error handling if 'ty' is not "data", "list", or "map" #}
+                '({%- for field in fields %}:{{ field.key_name }} {}{%- if not loop.last %} {% endif %}{%- endfor %})
+            {%- endif -%}",
+{%- for field in fields %}
+            self.{{ field.name }}.to_rpc(){% if not loop.last %},{% endif %}
+{%- endfor %}
+        )
+    }
+}

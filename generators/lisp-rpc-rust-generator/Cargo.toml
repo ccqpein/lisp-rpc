@@ -1,0 +1,12 @@
+[package]
+name = "lisp-rpc-rust-generator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reqwest = { version = "0", features = ["blocking"] }
+lisp-rpc-rust-parser = { version = "0", path = "../../parsers/lisp-rpc-rust-parser" }
+tera = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+url = "2"

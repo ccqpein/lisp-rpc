@@ -1,0 +1,3 @@
+* README
+
+run the generator with the spec in this folder
