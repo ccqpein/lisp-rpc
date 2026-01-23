@@ -24,8 +24,27 @@
        '("def-msg" "def-rpc" "def-rpc-package")
        '(def-msg-checker def-rpc-checker def-rpc-package-check)))
 
+(defparameter *symbol-names-record* nil
+  "dynamic var for recording the symbol names during the check")
+
 (defun spec-check-file (spec-file)
-  (with-open-file (stream spec-file :direction :input)
+  (let ((*symbol-names-record* (make-hash-table :test 'equal)))
+   (with-open-file (stream spec-file :direction :input)
+     (loop for expr = (read stream nil :eof)
+           ;;for count from 0
+           until (eq expr :eof)
+           ;;do (format t "expr: ~a check result: ~a~%" expr (spec-check-one expr))
+           unless (handler-case (spec-check-one expr)
+                    (error (e)
+                      (format t "expr: ~a check failed with error" expr)
+                      (return-from spec-check-file e)))
+             do (format t "expr: ~a check failed" expr)
+             and return nil
+           finally (return t)))))
+
+(defun spec-check-file-str (content)
+  (let ((*symbol-names-record* (make-hash-table :test 'equal))
+        (stream (make-string-input-stream content)))
     (loop for expr = (read stream nil :eof)
           ;;for count from 0
           until (eq expr :eof)
@@ -33,7 +52,7 @@
           unless (handler-case (spec-check-one expr)
                    (error (e)
                      (format t "expr: ~a check failed with error" expr)
-                     (return-from spec-check-file e)))
+                     (return-from spec-check-file-str e)))
             do (format t "expr: ~a check failed" expr)
             and return nil
           finally (return t))))
@@ -55,7 +74,11 @@
     (funcall checker (second expr) (cddr expr))))
 
 (defun def-msg-checker (name args)
-  (declare (ignore name))
+  "def-msg checker"
+  (if *symbol-names-record* ;; turn the symbol check
+      (if (gethash name *symbol-names-record*)
+          (error "~a symbol already exist" name)
+          (setf (gethash name *symbol-names-record*) name)))
   (if (zerop (length args))
       ;; it can be the empty definations
       t
@@ -98,7 +121,10 @@ list type defination should be '(list 'other-type)"
 
 (defun def-rpc-checker (name args)
   "args has to be the ('(map-data) symbol), the first args will be eval"
-  (declare (ignore name))
+  (if *symbol-names-record* ;; turn the symbol check
+      (if (gethash name *symbol-names-record*)
+          (error "~a symbol already exist" name)
+          (setf (gethash name *symbol-names-record*) name)))
   (if (zerop (length args))
       ;; it can be the empty definations
       (return-from def-rpc-checker t))
@@ -106,4 +132,9 @@ list type defination should be '(list 'other-type)"
        (if (second args) (type-checker (second args)) t)))
 
 (defun def-rpc-package-check (name &rest args)
+  (declare (ignore args))
+  (if *symbol-names-record* ;; turn the symbol check
+      (if (gethash name *symbol-names-record*)
+          (error "~a symbol already exist" name)
+          (setf (gethash name *symbol-names-record*) name)))
   t)

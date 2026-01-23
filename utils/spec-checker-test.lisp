@@ -61,3 +61,6 @@
   (is (lisp-rpc-checker::spec-check-one (read (make-string-input-stream "(def-rpc get-book
     (:title 'string :vesion 'string :lang (:lang 'string :encoding 'number))
   'book-info)")))))
+
+(test def-duplicated-symbol
+      (signals error (spec-check-file-str *example*)))
