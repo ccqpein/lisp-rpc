@@ -2,6 +2,7 @@
 
 use std::{error::Error, fmt::format, fs::File, io::Cursor, os::unix::fs::FileTypeExt, path::Path};
 
+use anyhow::Result;
 use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue, data::MapData};
 use tera::{Context, Tera};
 
@@ -41,11 +42,7 @@ pub struct DefMsg {
 }
 
 impl DefMsg {
-    pub fn new(
-        msg_name: &str,
-        rest_expr: &[Expr],
-        ty: RPCDataType,
-    ) -> Result<Self, Box<dyn Error>> {
+    pub fn new(msg_name: &str, rest_expr: &[Expr], ty: RPCDataType) -> Result<Self> {
         if rest_expr.iter().array_chunks().all(|[k, _]| {
             matches!(
                 k,
@@ -60,15 +57,15 @@ impl DefMsg {
                 msg_ty: ty,
             })
         } else {
-            Err(Box::new(DefMsgError {
+            anyhow::bail!(DefMsgError {
                 msg: "parsing failed, msg name arguments should be keyword-value pairs".to_string(),
                 err_type: DefMsgErrorType::InvalidInput,
-            }))
+            })
         }
     }
 
     /// make new def msg from str
-    fn from_str(source: &str, parser: Option<Parser>) -> Result<Self, Box<dyn Error>> {
+    fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         let mut p = match parser {
             Some(p) => p,
             None => Default::default(),
@@ -94,23 +91,23 @@ impl DefMsg {
 
     /// make new DefMsg from the one expr
     /// (def-msg name :keyword value)
-    pub fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>> {
+    pub fn from_expr(expr: &Expr) -> Result<Self> {
         let rest_expr: &[Expr];
         if Self::if_def_msg_expr(expr) {
             match &expr {
                 Expr::List(e) => rest_expr = &e[1..],
                 _ => {
-                    return Err(Box::new(DefMsgError {
+                    anyhow::bail!(DefMsgError {
                         msg: "parsing failed, the first symbol should be def-msg".to_string(),
                         err_type: DefMsgErrorType::InvalidInput,
-                    }));
+                    });
                 }
             }
         } else {
-            return Err(Box::new(DefMsgError {
+            anyhow::bail!(DefMsgError {
                 msg: "parsing failed, the first symbol should be def-msg".to_string(),
                 err_type: DefMsgErrorType::InvalidInput,
-            }));
+            });
         }
 
         let name = match &rest_expr[0] {
@@ -119,10 +116,10 @@ impl DefMsg {
                 ..
             }) => s,
             _ => {
-                return Err(Box::new(DefMsgError {
+                anyhow::bail!(DefMsgError {
                     msg: "parsing failed, msg name should be symbol".to_string(),
                     err_type: DefMsgErrorType::InvalidInput,
-                }));
+                });
             }
         };
 
@@ -130,7 +127,7 @@ impl DefMsg {
     }
 
     /// convet this spec to GeneratedStructs (self and the anonymity type)
-    pub fn create_gen_structs(&self) -> Result<Vec<GeneratedStruct>, Box<dyn Error>> {
+    pub fn create_gen_structs(&self) -> Result<Vec<GeneratedStruct>> {
         let mut res = vec![];
         let mut fields = vec![];
         for [k, v] in self.rest_expr.iter().array_chunks() {
@@ -154,42 +151,50 @@ impl DefMsg {
                     // anonymity msg type
                     // the map lisp-rpc defination can generate the other msg
                     // the list lisp-rpc defination can directly generated to Vec<T>
-                    match (&inner_exprs[0],&inner_exprs[1]) {
+                    match (&inner_exprs[0], &inner_exprs[1]) {
                         // map type, the first ele is keyword
-                        (Expr::Atom(Atom { value:TypeValue::Keyword(_)}),
-                        _) => {
+                        (
+                            Expr::Atom(Atom {
+                                value: TypeValue::Keyword(_),
+                            }),
+                            _,
+                        ) => {
                             let new_msg_name = self.msg_name.to_string() + "-" + f;
                             res.append(
                                 &mut Self::new(&new_msg_name, inner_exprs, RPCDataType::Map)?
                                     .create_gen_structs()?,
                             );
                             fields.push(GeneratedField::new(f, &new_msg_name, None));
-                        },
+                        }
                         // list type, the first ele is "list"
-                        (Expr::Atom(Atom { value:TypeValue::Symbol(l)}),
-                         Expr::Quote(box Expr::Atom(Atom { value:TypeValue::Symbol(t)})),
-                        ) if l == "list"=> {
+                        (
+                            Expr::Atom(Atom {
+                                value: TypeValue::Symbol(l),
+                            }),
+                            Expr::Quote(box Expr::Atom(Atom {
+                                value: TypeValue::Symbol(t),
+                            })),
+                        ) if l == "list" => {
                             let new_type_name = format!("Vec<{}>", type_translate(t));
                             fields.push(GeneratedField::new(f, &new_type_name, None));
-                        },
+                        }
                         _ => {
-                            return Err(Box::new(DefMsgError {
+                            anyhow::bail!(DefMsgError {
                                 msg:
                                 "create gen structs failed, anonymity type can only be the map or list"
                                     .to_string(),
                               err_type: DefMsgErrorType::InvalidInput,
-                            }))
+                            })
                         }
-                       
                     }
                 }
                 _ => {
-                    return Err(Box::new(DefMsgError {
+                    anyhow::bail!(DefMsgError {
                         msg:
                             "create gen structs failed, arguments has to be the keywords-value pair"
                                 .to_string(),
                         err_type: DefMsgErrorType::InvalidInput,
-                    }));
+                    });
                 }
             }
         }
@@ -205,10 +210,7 @@ impl DefMsg {
         Ok(res)
     }
 
-    fn gen_code_with_files(
-        &self,
-        template_files: &[impl AsRef<Path>],
-    ) -> Result<String, Box<dyn Error>> {
+    fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut tera = Tera::default();
         let mut context = Context::new();
 
@@ -236,8 +238,12 @@ impl DefMsg {
 }
 
 impl RPCSpec for DefMsg {
-    fn gen_code_with_files(&self, temp_file_paths: &[&str]) -> Result<String, Box<dyn Error>> {
+    fn gen_code_with_files(&self, temp_file_paths: &[&str]) -> Result<String> {
         self.gen_code_with_files(temp_file_paths)
+    }
+
+    fn symbol_name(&self) -> String {
+        self.msg_name.clone()
     }
 }
 
@@ -363,7 +369,7 @@ mod tests {
         );
 
         // anonymous fields without the nest quoted
-        
+
         let spec = r#"(def-msg book-info
     :lang (:a 'string :b 'number)
     :title 'string
@@ -399,26 +405,23 @@ mod tests {
             ],
         );
 
-                let spec = r#"(def-msg book-info
+        let spec = r#"(def-msg book-info
     :langs (list 'string)
     :version 'string)"#;
 
         let x = DefMsg::from_str(spec, None).unwrap();
         assert_eq!(
             x.create_gen_structs().unwrap(),
-            vec![
-                
-                GeneratedStruct::new(
-                    "book-info",
-                    None,
-                    vec![
-                        GeneratedField::new("langs", "Vec<String>", None),
-                        GeneratedField::new("version", "string", None),
-                    ],
-                    None,
-                    RPCDataType::Data,
-                ),
-            ],
+            vec![GeneratedStruct::new(
+                "book-info",
+                None,
+                vec![
+                    GeneratedField::new("langs", "Vec<String>", None),
+                    GeneratedField::new("version", "string", None),
+                ],
+                None,
+                RPCDataType::Data,
+            ),],
         );
     }
 

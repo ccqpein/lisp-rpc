@@ -10,3 +10,4 @@ tera = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 url = "2"
+anyhow = "1"

@@ -1,5 +1,6 @@
 use std::{error::Error, fs::File, io::Cursor, path::Path};
 
+use anyhow::Result;
 use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue, data::MapData};
 use tera::{Context, Tera};
 
@@ -36,7 +37,7 @@ pub struct DefRPC {
 }
 
 impl DefRPC {
-    fn from_str(source: &str, parser: Option<Parser>) -> Result<Self, Box<dyn Error>> {
+    fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         let mut p = match parser {
             Some(p) => p,
             None => Default::default(),
@@ -62,24 +63,24 @@ impl DefRPC {
 
     /// make new DefRPC from the one expr
     /// (def-rpc name '(:keyword value) 'return-value)
-    pub fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>> {
+    pub fn from_expr(expr: &Expr) -> Result<Self> {
         let rest_expr: &[Expr];
 
         if Self::if_def_rpc_expr(expr) {
             match &expr {
                 Expr::List(e) => rest_expr = &e[1..],
                 _ => {
-                    return Err(Box::new(DefRPCError {
+                    anyhow::bail!(DefRPCError {
                         msg: "parsing failed, the first symbol should be def-rpc".to_string(),
                         err_type: DefRPCErrorType::InvalidInput,
-                    }));
+                    });
                 }
             }
         } else {
-            return Err(Box::new(DefRPCError {
+            anyhow::bail!(DefRPCError {
                 msg: "parsing failed, the first symbol should be def-rpc".to_string(),
                 err_type: DefRPCErrorType::InvalidInput,
-            }));
+            });
         }
 
         let rpc_name = match &rest_expr[0] {
@@ -88,10 +89,10 @@ impl DefRPC {
                 ..
             }) => s.to_string(),
             _ => {
-                return Err(Box::new(DefRPCError {
+                anyhow::bail!(DefRPCError {
                     msg: "parsing failed, rpc name should be symbol".to_string(),
                     err_type: DefRPCErrorType::InvalidInput,
-                }));
+                });
             }
         };
 
@@ -99,11 +100,11 @@ impl DefRPC {
         let arguments = match de_quoted(&rest_expr[1]) {
             Expr::List(exprs) => exprs,
             _ => {
-                return Err(Box::new(DefRPCError {
+                anyhow::bail!(DefRPCError {
                     msg: "parsing failed, second arguments has to be list of keyword-value pairs"
                         .to_string(),
                     err_type: DefRPCErrorType::InvalidInput,
-                }));
+                });
             }
         };
 
@@ -113,18 +114,18 @@ impl DefRPC {
                     value: TypeValue::Symbol(rn),
                 }) => Some(rn.to_string()),
                 _ => {
-                    return Err(Box::new(DefRPCError {
+                    anyhow::bail!(DefRPCError {
                         msg: "parsing failed, quoted quoted".to_string(),
                         err_type: DefRPCErrorType::InvalidInput,
-                    }));
+                    });
                 }
             },
             None => None,
             _ => {
-                return Err(Box::new(DefRPCError {
+                anyhow::bail!(DefRPCError {
                     msg: "parsing failed, return type has to be quoted".to_string(),
                     err_type: DefRPCErrorType::InvalidInput,
-                }));
+                });
             }
         };
 
@@ -136,7 +137,7 @@ impl DefRPC {
     }
 
     /// convet this spec to GeneratedStructs (self and the anonymity type)
-    pub fn create_gen_structs(&self) -> Result<Vec<GeneratedStruct>, Box<dyn Error>> {
+    pub fn create_gen_structs(&self) -> Result<Vec<GeneratedStruct>> {
         let mut res = vec![];
         let mut fields = vec![];
         for [field, ty] in self.args.iter().array_chunks() {
@@ -167,12 +168,12 @@ impl DefRPC {
                     fields.push(GeneratedField::new(f, &new_msg_name, None));
                 }
                 _ => {
-                    return Err(Box::new(DefRPCError {
+                    anyhow::bail!(DefRPCError {
                         msg:
                             "create gen structs failed, arguments has to be the keywords-value pair"
                                 .to_string(),
                         err_type: DefRPCErrorType::InvalidInput,
-                    }));
+                    });
                 }
             }
         }
@@ -189,10 +190,7 @@ impl DefRPC {
     }
 
     // use the GeneratedStruct to generate the code
-    fn gen_code_with_files(
-        &self,
-        template_files: &[impl AsRef<Path>],
-    ) -> Result<String, Box<dyn Error>> {
+    fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut tera = Tera::default();
         let mut context = Context::new();
 
@@ -220,8 +218,12 @@ impl DefRPC {
 }
 
 impl RPCSpec for DefRPC {
-    fn gen_code_with_files(&self, temp_file_paths: &[&str]) -> Result<String, Box<dyn Error>> {
+    fn gen_code_with_files(&self, temp_file_paths: &[&str]) -> Result<String> {
         self.gen_code_with_files(temp_file_paths)
+    }
+
+    fn symbol_name(&self) -> String {
+        self.rpc_name.to_string()
     }
 }
 

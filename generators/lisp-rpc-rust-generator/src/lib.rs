@@ -5,9 +5,11 @@ pub mod def_msg;
 pub mod def_rpc;
 pub mod generater;
 
+use anyhow::Result;
+use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
+use std::{default, env, fs};
 use url::Url;
 
 pub use def_msg::*;
@@ -35,10 +37,68 @@ impl std::fmt::Display for SpecError {
 
 impl Error for SpecError {}
 
+/// the trait for all spec
 pub trait RPCSpec {
-    fn gen_code_with_files(&self, temp_file_paths: &[&str]) -> Result<String, Box<dyn Error>>;
+    fn symbol_name(&self) -> String;
+
+    fn gen_code_with_files(&self, temp_file_paths: &[&str]) -> Result<String>;
 }
 
+/// SpecFile struct for keep the status/states whiling parsing the spec file
+/// and the all specs of this file
+#[derive(Default)]
+pub struct SpecFile {
+    specs: Vec<Box<dyn RPCSpec>>,
+    sym_table: HashMap<String, bool>,
+}
+
+impl<'s> IntoIterator for &'s SpecFile {
+    type Item = &'s Box<dyn RPCSpec>;
+
+    type IntoIter = SpecFileIter<'s>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SpecFileIter { ind: 0, sf: self }
+    }
+}
+
+impl SpecFile {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn record_one(&mut self, spec: Box<dyn RPCSpec>) -> Result<()> {
+        let sym_name = spec.symbol_name();
+        self.specs.push(spec);
+        if self.sym_table.get(&sym_name).is_some() {
+            anyhow::bail!("sym {} already have", sym_name)
+        }
+
+        self.sym_table.insert(sym_name, true);
+        Ok(())
+    }
+}
+
+pub struct SpecFileIter<'s> {
+    ind: usize,
+    sf: &'s SpecFile,
+}
+
+impl<'s> Iterator for SpecFileIter<'s> {
+    type Item = &'s Box<dyn RPCSpec>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let x = self.sf.specs.get(self.ind);
+        self.ind += 1;
+        x
+    }
+}
+
+//
+// help functions below
+//
+
+/// helper function
 pub fn kebab_to_pascal_case(s: &str) -> String {
     s.split('-')
         .map(|segment| {
@@ -51,6 +111,7 @@ pub fn kebab_to_pascal_case(s: &str) -> String {
         .collect()
 }
 
+/// helper function
 pub fn kebab_to_snake_case(s: &str) -> String {
     s.replace('-', "_")
 }
@@ -64,7 +125,7 @@ pub fn type_translate(sym: &str) -> String {
 }
 
 /// read from file or url
-pub fn read_single_template_content(source: &str) -> Result<String, Box<dyn Error>> {
+pub fn read_single_template_content(source: &str) -> Result<String> {
     if let Ok(url) = Url::parse(source) {
         if url.scheme() == "http" || url.scheme() == "https" {
             println!("Attempting to fetch content from URL: {}", url);
@@ -81,9 +142,9 @@ pub fn read_single_template_content(source: &str) -> Result<String, Box<dyn Erro
     fs::read_to_string(path).map_err(|e| e.into())
 }
 
-pub fn get_all_file_paths_in_folder(folder_path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+pub fn get_all_file_paths_in_folder(folder_path: &Path) -> Result<Vec<PathBuf>> {
     if !folder_path.is_dir() {
-        return Err(format!("Path is not a directory: {}", folder_path.display()).into());
+        anyhow::bail!("Path is not a directory: {}", folder_path.display())
     }
 
     println!(
@@ -109,12 +170,9 @@ pub fn get_all_file_paths_in_folder(folder_path: &Path) -> Result<Vec<PathBuf>, 
     Ok(file_paths)
 }
 
-pub fn copy_folder_to_new_name(
-    source_path: &Path,
-    new_folder_name: &str,
-) -> Result<(), Box<dyn Error>> {
+pub fn copy_folder_to_new_name(source_path: &Path, new_folder_name: &str) -> Result<()> {
     if !source_path.is_dir() {
-        return Err(format!("Source path is not a directory: {}", source_path.display()).into());
+        anyhow::bail!("Source path is not a directory: {}", source_path.display())
     }
 
     let current_dir = env::current_dir()?;
@@ -133,7 +191,7 @@ pub fn copy_folder_to_new_name(
     Ok(())
 }
 
-fn copy_recursive(source: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
+fn copy_recursive(source: &Path, destination: &Path) -> Result<()> {
     for entry_result in fs::read_dir(source)? {
         let entry = entry_result?;
         let entry_path = entry.path();

@@ -1,3 +1,9 @@
 * README
 
 run the generator with the spec in this folder
+
+For debugging:
+
+#+begin_src shell
+  
+#+end_src

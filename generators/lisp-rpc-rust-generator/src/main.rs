@@ -1,3 +1,4 @@
+use anyhow::Result;
 use clap::Parser;
 use lisp_rpc_rust_generator::*;
 use std::error::Error;
@@ -19,24 +20,25 @@ struct Args {
     template_path: String,
 }
 
-fn parse_spec_file(file: File) -> Result<Vec<Box<dyn RPCSpec>>, Box<dyn Error>> {
+fn parse_spec_file(file: File) -> Result<SpecFile> {
     let mut parser: lisp_rpc_rust_parser::Parser = Default::default();
+
     let exprs = parser
         .parse_root(file)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-    let mut res = vec![];
+    let mut specs = SpecFile::new();
     for expr in &exprs {
         if DefRPC::if_def_rpc_expr(expr) {
-            res.push(Box::new(DefRPC::from_expr(expr)?) as Box<dyn RPCSpec>)
+            specs.record_one(Box::new(DefRPC::from_expr(expr)?))?;
         } else if DefMsg::if_def_msg_expr(expr) {
-            res.push(Box::new(DefMsg::from_expr(expr)?) as Box<dyn RPCSpec>)
+            specs.record_one(Box::new(DefMsg::from_expr(expr)?))?
         } else {
-            return Err("unknown expr".into());
+            anyhow::bail!("unknown expr");
         }
     }
 
-    Ok(res)
+    Ok(specs)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -48,6 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("Error: Input file does not exist at {:?}", input_path);
         return Err("Input file not found".into());
     }
+
     if !input_path.is_file() {
         eprintln!("Error: Path {:?} is not a file.", input_path);
         return Err("Path is not a file".into());
@@ -55,13 +58,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let file = File::open(input_path)?;
     let specs = parse_spec_file(file)?;
+
     let lib_file_path = args.template_path + "/src" + "lib.rs";
     let mut file = OpenOptions::new()
         .append(true)
         .create(true)
         .open(lib_file_path)?;
 
-    for s in specs {
+    for s in &specs {
         write!(
             file,
             "{}",
