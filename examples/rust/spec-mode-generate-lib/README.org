@@ -5,5 +5,7 @@ run the generator with the spec in this folder
 For debugging:
 
 #+begin_src shell
-  
+  ../../../generators/lisp-rpc-rust-generator/target/debug/lisp-rpc-rust-generator\
+      --input-file spec.lisprpc\
+      --templates-path ../../../generators/lisp-rpc-rust-generator/templates/
 #+end_src

@@ -218,7 +218,7 @@ impl DefRPC {
 }
 
 impl RPCSpec for DefRPC {
-    fn gen_code_with_files(&self, temp_file_paths: &[&str]) -> Result<String> {
+    fn gen_code_with_files(&self, temp_file_paths: &[String]) -> Result<String> {
         self.gen_code_with_files(temp_file_paths)
     }
 

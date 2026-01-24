@@ -1,7 +1,7 @@
 ;;; define the spec of the api
 ;;; this should be optional
 
-(def-rpc-package "demo")
+(def-rpc-package demo)
 
 (def-msg language-perfer :lang 'string)
 

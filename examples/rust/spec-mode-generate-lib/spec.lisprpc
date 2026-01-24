@@ -1,4 +1,4 @@
-(def-rpc-package "demo")
+(def-rpc-package demo)
 
 (def-msg language-perfer :lang 'string)
 

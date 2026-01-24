@@ -2,6 +2,7 @@
 #![feature(box_patterns)]
 
 pub mod def_msg;
+pub mod def_package;
 pub mod def_rpc;
 pub mod generater;
 
@@ -13,6 +14,7 @@ use std::{default, env, fs};
 use url::Url;
 
 pub use def_msg::*;
+pub use def_package::*;
 pub use def_rpc::*;
 pub use generater::*;
 
@@ -41,7 +43,7 @@ impl Error for SpecError {}
 pub trait RPCSpec {
     fn symbol_name(&self) -> String;
 
-    fn gen_code_with_files(&self, temp_file_paths: &[&str]) -> Result<String>;
+    fn gen_code_with_files(&self, temp_file_paths: &[String]) -> Result<String>;
 }
 
 /// SpecFile struct for keep the status/states whiling parsing the spec file
