@@ -18,8 +18,6 @@ pub use def_package::*;
 pub use def_rpc::*;
 pub use generater::*;
 
-use lisp_rpc_rust_parser::data::Data;
-
 #[derive(Debug)]
 enum SpecErrorType {
     InvalidInput,

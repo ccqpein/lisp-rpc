@@ -1,5 +1,9 @@
+use std::io::Cursor;
+
 use super::*;
-use lisp_rpc_rust_parser::{Atom, Expr, TypeValue};
+use anyhow::Context;
+use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue};
+use tera::Tera;
 
 #[derive(Debug)]
 enum DefPkgErrorType {
@@ -49,14 +53,15 @@ impl DefPkg {
                 Expr::List(e) => rest_expr = &e[1..],
                 _ => {
                     anyhow::bail!(DefPkgError {
-                        msg: "parsing failed, the first symbol should be def-msg".to_string(),
+                        msg: "parsing failed, the first symbol should be def-rpc-package"
+                            .to_string(),
                         err_type: DefPkgErrorType::InvalidInput,
                     });
                 }
             }
         } else {
             anyhow::bail!(DefPkgError {
-                msg: "parsing failed, the first symbol should be def-msg".to_string(),
+                msg: "parsing failed, the first symbol should be def-rpc-package".to_string(),
                 err_type: DefPkgErrorType::InvalidInput,
             });
         }
@@ -78,15 +83,85 @@ impl DefPkg {
             pkg_name: name.to_string(),
         })
     }
+
+    fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
+        let mut p = match parser {
+            Some(p) => p,
+            None => Default::default(),
+        };
+
+        let expr = p.parse_root_one(Cursor::new(source))?;
+
+        Self::from_expr(&expr)
+    }
+
+    fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
+        let mut tera = Tera::default();
+        let mut context = tera::Context::new();
+
+        let mut all_temps = vec![];
+        for p in template_files {
+            match p.as_ref().file_stem().map(|n| n.to_str()) {
+                Some(n) => {
+                    all_temps.push((p, n));
+                }
+                None => (),
+            }
+        }
+
+        tera.add_template_files(all_temps)?;
+
+        context.insert("package_name", &self.pkg_name);
+        tera.render("Cargo.toml", &context)
+            .context("render def package wrong")
+    }
 }
 
 impl RPCSpec for DefPkg {
     fn gen_code_with_files(&self, temp_file_paths: &[String]) -> Result<String> {
-        //self.gen_code_with_files(temp_file_paths)
-        Ok(String::new())
+        self.gen_code_with_files(temp_file_paths)
     }
 
     fn symbol_name(&self) -> String {
         self.pkg_name.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn test_parse_def_pkg() {
+        let case = r#"(def-rpc-package demo)"#;
+        let dp = DefPkg::from_str(case, Default::default()).unwrap();
+        assert_eq!(
+            dp,
+            DefPkg {
+                pkg_name: "demo".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_gen_code() {
+        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let template_file_path = vec![project_root.join("templates/Cargo.toml.template")];
+
+        let case = r#"(def-rpc-package demo)"#;
+        let dp = DefPkg::from_str(case, Default::default()).unwrap();
+
+        assert_eq!(
+            dp.gen_code_with_files(&template_file_path).unwrap(),
+            r#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+"#,
+        )
     }
 }
