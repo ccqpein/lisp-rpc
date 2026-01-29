@@ -1,11 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use lisp_rpc_rust_generator::*;
-use std::error::Error;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -15,6 +13,9 @@ struct Args {
 
     #[arg(short, long, value_name = "templates-path")]
     templates_path: PathBuf,
+
+    #[arg(short, long, value_name = "output-path")]
+    output_path: PathBuf,
 }
 
 fn parse_spec_file(file: File) -> Result<SpecFile> {
@@ -58,22 +59,6 @@ fn main() -> Result<()> {
     let file = File::open(input_path)?;
     let specs = parse_spec_file(file)?;
 
-    let lib_file_path = "./src/lib.rs";
-    let path = Path::new(lib_file_path);
-
-    // Create parent directory if it doesn't exist
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create directory: {:?}", parent))?;
-    }
-
-    // Now you can open the file
-    let mut file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(path)
-        .with_context(|| format!("Failed to open file: {:?}", path))?;
-
     // read all template file
     let mut templates = vec![];
     if args.templates_path.is_dir() {
@@ -92,11 +77,5 @@ fn main() -> Result<()> {
         anyhow::bail!("templates_path has to be dir")
     }
 
-    for s in &specs {
-        write!(file, "{}", s.gen_code_with_files(&templates)?)?;
-        writeln!(file)?;
-    }
-
-    //dbg!(exprs);
-    Ok(())
+    specs.gen_code_to_file(args.output_path, &templates)
 }

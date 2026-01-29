@@ -32,7 +32,8 @@ impl GeneratedField {
     }
 }
 
-/// the GeneratedStruct is the middle layer between render and rpc spec
+/// the GeneratedStruct is the middle layer between render and rpc spec (msg and rpc)
+/// def pkg is too simple, no need this
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct GeneratedStruct {
     pub name: String,

@@ -115,11 +115,28 @@ impl DefPkg {
         tera.render("Cargo.toml", &context)
             .context("render def package wrong")
     }
+
+    /// Generate code with the exist tera instance
+    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+        let mut context = tera::Context::new();
+        context.insert("package_name", &self.pkg_name);
+        templates
+            .render("Cargo.toml", &context)
+            .context("render def package wrong")
+    }
 }
 
 impl RPCSpec for DefPkg {
-    fn gen_code_with_files(&self, temp_file_paths: &[String]) -> Result<String> {
+    fn gen_code_with_temp_files(&self, temp_file_paths: &[String]) -> Result<String> {
         self.gen_code_with_files(temp_file_paths)
+    }
+
+    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+        self.gen_code_with_tera(templates)
+    }
+
+    fn file_target(&self) -> TargetFile {
+        TargetFile::Cargo
     }
 
     fn symbol_name(&self) -> String {

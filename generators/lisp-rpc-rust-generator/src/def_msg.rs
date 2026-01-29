@@ -210,6 +210,7 @@ impl DefMsg {
         Ok(res)
     }
 
+    /// generate code with the slice of path of template
     fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut tera = Tera::default();
         let mut context = Context::new();
@@ -235,11 +236,32 @@ impl DefMsg {
 
         Ok(bucket.join("\n\n"))
     }
+
+    /// Generate code with the exist tera instance
+    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+        let mut context = Context::new();
+        let mut bucket = vec![];
+        for s in self.create_gen_structs()? {
+            s.insert_template(&mut context);
+            bucket.push(templates.render("def_struct.rs", &context)?);
+            bucket.push(templates.render("rpc_impl", &context)?);
+        }
+
+        Ok(bucket.join("\n\n"))
+    }
 }
 
 impl RPCSpec for DefMsg {
-    fn gen_code_with_files(&self, temp_file_paths: &[String]) -> Result<String> {
+    fn gen_code_with_temp_files(&self, temp_file_paths: &[String]) -> Result<String> {
         self.gen_code_with_files(temp_file_paths)
+    }
+
+    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+        self.gen_code_with_tera(templates)
+    }
+
+    fn file_target(&self) -> TargetFile {
+        TargetFile::Lib
     }
 
     fn symbol_name(&self) -> String {

@@ -6,11 +6,14 @@ pub mod def_package;
 pub mod def_rpc;
 pub mod generater;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::error::Error;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{default, env, fs};
+use tera::Tera;
 use url::Url;
 
 pub use def_msg::*;
@@ -37,11 +40,20 @@ impl std::fmt::Display for SpecError {
 
 impl Error for SpecError {}
 
+pub enum TargetFile {
+    Lib,
+    Cargo,
+}
+
 /// the trait for all spec
 pub trait RPCSpec {
     fn symbol_name(&self) -> String;
 
-    fn gen_code_with_files(&self, temp_file_paths: &[String]) -> Result<String>;
+    fn gen_code_with_temp_files(&self, temp_file_paths: &[String]) -> Result<String>;
+
+    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String>;
+
+    fn file_target(&self) -> TargetFile;
 }
 
 /// SpecFile struct for keep the status/states whiling parsing the spec file
@@ -49,6 +61,8 @@ pub trait RPCSpec {
 #[derive(Default)]
 pub struct SpecFile {
     specs: Vec<Box<dyn RPCSpec>>,
+
+    /// the cache table for checking the duplication symbol
     sym_table: HashMap<String, bool>,
 }
 
@@ -75,6 +89,75 @@ impl SpecFile {
         }
 
         self.sym_table.insert(sym_name, true);
+        Ok(())
+    }
+
+    /// write the cargo toml and the lib file
+    pub fn gen_code_to_file(
+        &self,
+        output_path: PathBuf,
+        templates: &[impl AsRef<Path>],
+    ) -> Result<()> {
+        let mut tera = Tera::default();
+        let mut all_temps = vec![];
+        for p in templates {
+            match p.as_ref().file_stem().map(|n| n.to_str()) {
+                Some(n) => {
+                    all_temps.push((p, n));
+                }
+                None => (),
+            }
+        }
+
+        tera.add_template_files(all_temps)?;
+
+        let mut lib_name = None;
+        let mut cargo_content = String::new();
+        let mut lib_content = String::new();
+        // file targets
+        for s in &self.specs {
+            match s.file_target() {
+                TargetFile::Lib => {
+                    lib_content += s.gen_code_with_tera(&tera)?.as_str();
+                }
+                TargetFile::Cargo => {
+                    lib_name = Some(s.symbol_name());
+                    cargo_content += s.gen_code_with_tera(&tera)?.as_str();
+                }
+            }
+        }
+
+        // start to create files
+        let lib_file_path = output_path
+            .join(lib_name.as_ref().context("no lib name")?)
+            .join("src/lib.rs");
+
+        // create the parents
+        if let Some(parent) = lib_file_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory: {:?}", parent))?;
+        }
+
+        let mut lib_file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&lib_file_path)
+            .with_context(|| format!("Failed to open file: {:?}", lib_file_path))?;
+
+        let cargo_file_path = output_path
+            .join(lib_name.as_ref().context("no lib name")?)
+            .join("Cargo.toml");
+
+        let mut cargo_file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&cargo_file_path)
+            .with_context(|| format!("Failed to open file: {:?}", cargo_file_path))?;
+
+        // write the file
+        write!(lib_file, "{}", lib_content)?;
+        write!(cargo_file, "{}", cargo_content)?;
+
         Ok(())
     }
 }
