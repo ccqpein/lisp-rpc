@@ -1,59 +1,65 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{ToTokens, quote};
-use syn::{Data, DeriveInput, Ident, Type, parse_macro_input};
+use quote::quote;
+use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
-/// A procedural macro that can be derived on a struct to provide a method
-/// that lists its fields and their types.
-///
-/// Example:
-/// ```
-/// use my_derive_macro::PrintFields;
-///
-/// #[derive(PrintFields)]
-/// pub struct BookInfo {
-///     lang: String,
-///     title: String,
-///     version: String,
-///     id: String,
-/// }
-///
-/// fn main() {
-///     BookInfo::print_fields();
-/// }
-/// ```
-#[proc_macro_derive(LispRPCRaw)]
-pub fn print_fields_derive(input: TokenStream) -> TokenStream {
+fn to_kebab_case(s: &str) -> String {
+    let mut result = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() {
+            if i != 0 {
+                result.push('-');
+            }
+            result.push(c.to_ascii_lowercase());
+        } else if c == '_' {
+            result.push('-');
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+#[proc_macro_derive(ToRPCData)]
+pub fn to_rpc_data_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    let struct_name = input.ident;
+    let struct_name_str = struct_name.to_string();
+    let lisp_name = to_kebab_case(&struct_name_str);
 
-    let struct_name = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let fields = match &input.data {
-        Data::Struct(data_struct) => &data_struct.fields,
-        _ => panic!("PrintFields can only be derived on structs"),
+    let fields = match input.data {
+        Data::Struct(data) => data.fields,
+        _ => panic!("ToRPCData only supports structs"),
     };
 
-    let field_printers = fields.iter().map(|field| {
-        let field_name = field.ident.as_ref().expect("Expected named field");
-        let field_type = &field.ty;
+    let named_fields = match fields {
+        Fields::Named(fields) => fields.named,
+        _ => panic!("ToRPCData only supports structs with named fields"),
+    };
 
-        // Convert the type to a string for printing.
-        // This uses `.to_token_stream().to_string()`
-        // because `Type` itself doesn't directly give a string name.
-        let field_type_str = field_type.to_token_stream().to_string();
+    let mut format_string = String::new();
+    format_string.push_str(&format!("({}", lisp_name));
 
-        quote! {
-            println!("  Field: {}, Type: {}", stringify!(#field_name), #field_type_str);
-        }
-    });
+    let mut args = Vec::new();
+
+    for field in named_fields {
+        let ident = field.ident.expect("Field must have a name");
+        let ident_str = ident.to_string();
+        let field_lisp_name = to_kebab_case(&ident_str);
+
+        format_string.push_str(&format!(" :{} {{}}", field_lisp_name));
+        args.push(quote! { self.#ident.to_rpc() });
+    }
+
+    format_string.push(')');
+
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics #struct_name #ty_generics #where_clause {
-            pub fn print_fields() {
-                println!("Struct: {}", stringify!(#struct_name));
-                #(#field_printers)*
+        impl #impl_generics ToRPCData for #struct_name #ty_generics #where_clause {
+            fn to_rpc(&self) -> String {
+                format!(#format_string, #(#args),*)
             }
         }
     };
