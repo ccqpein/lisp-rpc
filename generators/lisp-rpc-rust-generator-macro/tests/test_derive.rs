@@ -1,33 +1,63 @@
-use lisp_rpc_rust_generator_macro::ToRPCData;
+use lisp_rpc_rust_generator_macro::RPCData;
 
-trait ToRPCData {
-    fn to_rpc(&self) -> String;
+// Mock traits
+#[derive(Debug)]
+enum RPCType {
+    Msg(String),
+    RPC(String),
+    Map,
+    List,
+
+    /// default value
+    V,
 }
 
-// Mock impl for String
-impl ToRPCData for String {
-    fn to_rpc(&self) -> String {
+/// need impl for struct
+trait ToRPCType {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::V
+    }
+}
+
+trait RPCData: ToRPCType {
+    fn rpc_raw_data(&self) -> String;
+    fn rpc_data(&self) -> String {
+        match self.to_rpc_type() {
+            RPCType::Msg(x) | RPCType::RPC(x) => format!("({} {})", x, self.rpc_data()),
+            RPCType::Map | RPCType::List => "'(".to_string() + &self.rpc_data() + ")",
+            RPCType::V => self.rpc_raw_data(),
+        }
+    }
+}
+
+// Mock impls
+impl ToRPCType for String {}
+impl RPCData for String {
+    fn rpc_raw_data(&self) -> String {
         format!("\"{}\"", self)
     }
 }
 
 struct LanguagePerfer;
-impl ToRPCData for LanguagePerfer {
-    fn to_rpc(&self) -> String {
+impl ToRPCType for LanguagePerfer {}
+impl RPCData for LanguagePerfer {
+    fn rpc_raw_data(&self) -> String {
         "lang-val".to_string()
     }
 }
 
-#[derive(ToRPCData)]
+#[derive(RPCData)]
 struct BookInfo {
     lang: LanguagePerfer,
     title: String,
     version: String,
     id: String,
 }
+// We need to implement ToRPCType manually because the derive only handles RPCData
+impl ToRPCType for BookInfo {}
 
 #[test]
-fn test_book_info_to_rpc() {
+fn test_book_info_rpc_data() {
     let book = BookInfo {
         lang: LanguagePerfer,
         title: "The Book".to_string(),
@@ -35,12 +65,10 @@ fn test_book_info_to_rpc() {
         id: "123".to_string(),
     };
 
-    // Note: The macro generates fields in the order they are defined in the struct.
-    // Struct order: lang, title, version, id.
-    // Expected output: (book-info :lang lang-val :title "The Book" :version "1.0" :id "123")
-
-    let expected = "(book-info :lang lang-val :title \"The Book\" :version \"1.0\" :id \"123\")";
-    let actual = book.to_rpc();
+    // Expected: :lang lang-val :title "The Book" :version "1.0" :id "123"
+    // Note: The macro generates fields in definition order.
+    let expected = ":lang lang-val :title \"The Book\" :version \"1.0\" :id \"123\"";
+    let actual = book.rpc_raw_data();
 
     assert_eq!(actual, expected);
 }

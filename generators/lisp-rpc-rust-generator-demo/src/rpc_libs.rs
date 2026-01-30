@@ -1,69 +1,98 @@
 // let me assume I have this struct have been generate by generater
 use super::*;
+use lisp_rpc_rust_generator_macro::*;
 
-#[derive(Debug)]
+#[derive(Debug, RPCData)]
 pub struct LanguagePerfer {
     lang: String,
 }
 
-impl ToRPCData for LanguagePerfer {
-    fn to_rpc(&self) -> String {
-        format!("(language-perfer :lang {})", self.lang.to_rpc())
+impl ToRPCType for LanguagePerfer {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Msg("language-perfer".to_string())
     }
 }
 
-#[derive(Debug)]
+// impl ToRPCData for LanguagePerfer {
+//     fn to_rpc(&self) -> String {
+//         format!("(language-perfer :lang {})", self.lang.to_rpc())
+//     }
+// }
+
+#[derive(Debug, RPCData)]
 pub struct BookInfo {
-    lang: LanguagePerfer,
+    id: String,
     title: String,
     version: String,
-    id: String,
+    lang: LanguagePerfer,
 }
 
-impl ToRPCData for BookInfo {
-    fn to_rpc(&self) -> String {
-        format!(
-            "(book-info :id {} :title {} :version {} :lang {})",
-            self.id.to_rpc(),
-            self.title.to_rpc(),
-            self.version.to_rpc(),
-            self.lang.to_rpc()
-        )
+impl ToRPCType for BookInfo {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Msg("book-info".to_string())
     }
 }
 
+// impl RPCData for BookInfo {
+//     fn rpc_data(&self) -> String {
+//         format!(
+//             ":id {} :title {} :version {} :lang {}",
+//             self.id.rpc_data(),
+//             self.title.rpc_data(),
+//             self.version.rpc_data(),
+//             self.lang.rpc_data()
+//         )
+//     }
+// }
+
+// impl ToRPCData for BookInfo {
+//     fn to_rpc(&self) -> String {
+//         format!(
+//             "(book-info :id {} :title {} :version {} :lang {})",
+//             self.id.to_rpc(),
+//             self.title.to_rpc(),
+//             self.version.to_rpc(),
+//             self.lang.to_rpc()
+//         )
+//     }
+// }
+
 // rpc + keyword name
+#[derive(RPCData)]
 pub struct GetBookLang {
     lang: String,
     encoding: i64,
 }
 
-impl ToRPCData for GetBookLang {
-    fn to_rpc(&self) -> String {
-        format!(
-            "'(:lang {} :encoding {})",
-            self.lang.to_rpc(),
-            self.encoding.to_rpc(),
-        )
+impl ToRPCType for GetBookLang {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Map
     }
 }
 
+#[derive(RPCData)]
 pub struct GetBook {
     title: String,
     version: String,
     lang: GetBookLang,
 }
 
-impl ToRPCData for GetBook {
-    fn to_rpc(&self) -> String {
-        format!(
-            "(get-book :title {} :version {} :lang {})",
-            self.title.to_rpc(),
-            self.version.to_rpc(),
-            self.lang.to_rpc()
-        )
+impl ToRPCType for GetBook {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::RPC("get-book".to_string())
     }
 }
+
+// impl ToRPCData for GetBook {
+//     fn to_rpc(&self) -> String {
+//         format!(
+//             "(get-book :title {} :version {} :lang {})",
+//             self.title.to_rpc(),
+//             self.version.to_rpc(),
+//             self.lang.to_rpc()
+//         )
+//     }
+// }
 
 // test below for making sure
 #[cfg(test)]
@@ -71,7 +100,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_book_to_rpc() {
+    fn test_get_book_rpc_data() {
         let gb = GetBook {
             title: "hello world".to_string(),
             version: "1984".to_string(),
@@ -82,23 +111,23 @@ mod tests {
         };
 
         assert_eq!(
-            gb.to_rpc(),
+            gb.rpc_data(),
             r#"(get-book :title "hello world" :version "1984" :lang '(:lang "english" :encoding 11))"#
         )
     }
 
     #[test]
-    fn test_book_info_to_rpc() {
+    fn test_book_info_rpc_data() {
         let bi = BookInfo {
+            id: "123".to_string(),
+            title: "hello world".to_string(),
+            version: "1984".to_string(),
             lang: LanguagePerfer {
                 lang: "english".to_string(),
             },
-            title: "hello world".to_string(),
-            version: "1984".to_string(),
-            id: "123".to_string(),
         };
         assert_eq!(
-            bi.to_rpc(),
+            bi.rpc_data(),
             r#"(book-info :id "123" :title "hello world" :version "1984" :lang (language-perfer :lang "english"))"#
         )
     }
