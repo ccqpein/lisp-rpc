@@ -64,6 +64,9 @@ pub struct SpecFile {
 
     /// the cache table for checking the duplication symbol
     sym_table: HashMap<String, bool>,
+
+    /// the pkg folder, has value after read the def-package expr
+    target_pkg_name: Option<String>,
 }
 
 impl<'s> IntoIterator for &'s SpecFile {
@@ -92,10 +95,18 @@ impl SpecFile {
         Ok(())
     }
 
+    pub fn get_target_pkg_name(&self) -> Option<String> {
+        self.target_pkg_name.clone()
+    }
+
+    pub fn set_target_pkg_name(&mut self, name: String) {
+        self.target_pkg_name = Some(name)
+    }
+
     /// write the cargo toml and the lib file
     pub fn gen_code_to_file(
         &self,
-        output_path: PathBuf,
+        output_path: &PathBuf,
         templates: &[impl AsRef<Path>],
     ) -> Result<()> {
         let mut tera = Tera::default();
@@ -111,7 +122,6 @@ impl SpecFile {
 
         tera.add_template_files(all_temps)?;
 
-        let mut lib_name = None;
         let mut cargo_content = String::new();
         let mut lib_content = String::new();
         // file targets
@@ -121,16 +131,19 @@ impl SpecFile {
                     lib_content += s.gen_code_with_tera(&tera)?.as_str();
                 }
                 TargetFile::Cargo => {
-                    lib_name = Some(s.symbol_name());
                     cargo_content += s.gen_code_with_tera(&tera)?.as_str();
                 }
             }
         }
 
+        // pkg project folder
+        let lib_path = output_path.join(self.target_pkg_name.as_ref().context("no lib name")?);
+        if lib_path.exists() {
+            anyhow::bail!("the lib exist, delete it first")
+        }
+
         // start to create files
-        let lib_file_path = output_path
-            .join(lib_name.as_ref().context("no lib name")?)
-            .join("src/lib.rs");
+        let lib_file_path = lib_path.join("src/rpc_libs.rs");
 
         // create the parents
         if let Some(parent) = lib_file_path.parent() {
@@ -144,9 +157,7 @@ impl SpecFile {
             .open(&lib_file_path)
             .with_context(|| format!("Failed to open file: {:?}", lib_file_path))?;
 
-        let cargo_file_path = output_path
-            .join(lib_name.as_ref().context("no lib name")?)
-            .join("Cargo.toml");
+        let cargo_file_path = lib_path.join("Cargo.toml");
 
         let mut cargo_file = OpenOptions::new()
             .append(true)

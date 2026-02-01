@@ -32,7 +32,10 @@ fn parse_spec_file(file: File) -> Result<SpecFile> {
         } else if DefMsg::if_def_msg_expr(expr) {
             specs.record_one(Box::new(DefMsg::from_expr(expr)?))?
         } else if DefPkg::if_def_pkg_expr(expr) {
-            specs.record_one(Box::new(DefPkg::from_expr(expr)?))?
+            // update the pkg name
+            let x = DefPkg::from_expr(expr)?;
+            specs.set_target_pkg_name(x.symbol_name());
+            specs.record_one(Box::new(x))?
         } else {
             anyhow::bail!("unknown expr: {expr}");
         }
@@ -62,7 +65,7 @@ fn main() -> Result<()> {
     // read all template file
     let mut templates = vec![];
     if args.templates_path.is_dir() {
-        for entry in fs::read_dir(args.templates_path)? {
+        for entry in fs::read_dir(&args.templates_path)? {
             let entry_path = entry?.path();
             if entry_path.is_file() {
                 templates.push(
@@ -77,5 +80,17 @@ fn main() -> Result<()> {
         anyhow::bail!("templates_path has to be dir")
     }
 
-    specs.gen_code_to_file(args.output_path, &templates)
+    specs.gen_code_to_file(&args.output_path, &templates)?;
+
+    // after the previous line, the folder should already created
+    fs::copy(
+        &args.templates_path.join("lib.rs"),
+        &args
+            .output_path
+            .join(specs.get_target_pkg_name().context("no pkg name")?)
+            .join("src/lib.rs"),
+    )
+    .with_context(|| "copy failed")?;
+
+    Ok(())
 }

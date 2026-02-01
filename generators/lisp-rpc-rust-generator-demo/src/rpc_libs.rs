@@ -13,12 +13,6 @@ impl ToRPCType for LanguagePerfer {
     }
 }
 
-// impl ToRPCData for LanguagePerfer {
-//     fn to_rpc(&self) -> String {
-//         format!("(language-perfer :lang {})", self.lang.to_rpc())
-//     }
-// }
-
 #[derive(Debug, RPCData)]
 pub struct BookInfo {
     id: String,
@@ -32,30 +26,6 @@ impl ToRPCType for BookInfo {
         RPCType::Msg("book-info".to_string())
     }
 }
-
-// impl RPCData for BookInfo {
-//     fn rpc_data(&self) -> String {
-//         format!(
-//             ":id {} :title {} :version {} :lang {}",
-//             self.id.rpc_data(),
-//             self.title.rpc_data(),
-//             self.version.rpc_data(),
-//             self.lang.rpc_data()
-//         )
-//     }
-// }
-
-// impl ToRPCData for BookInfo {
-//     fn to_rpc(&self) -> String {
-//         format!(
-//             "(book-info :id {} :title {} :version {} :lang {})",
-//             self.id.to_rpc(),
-//             self.title.to_rpc(),
-//             self.version.to_rpc(),
-//             self.lang.to_rpc()
-//         )
-//     }
-// }
 
 // rpc + keyword name
 #[derive(RPCData)]
@@ -82,17 +52,6 @@ impl ToRPCType for GetBook {
         RPCType::RPC("get-book".to_string())
     }
 }
-
-// impl ToRPCData for GetBook {
-//     fn to_rpc(&self) -> String {
-//         format!(
-//             "(get-book :title {} :version {} :lang {})",
-//             self.title.to_rpc(),
-//             self.version.to_rpc(),
-//             self.lang.to_rpc()
-//         )
-//     }
-// }
 
 // test below for making sure
 #[cfg(test)]
