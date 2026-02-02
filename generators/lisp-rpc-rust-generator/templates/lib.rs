@@ -30,7 +30,7 @@ trait RPCData: ToRPCType {
     }
 }
 
-macro_rules! impl_to_rpc_data_type {
+macro_rules! impl_to_rpc_data_type_v {
     ($($type:ty),*) => {
         $(
             impl ToRPCType for $type {
@@ -42,17 +42,24 @@ macro_rules! impl_to_rpc_data_type {
     };
 }
 
-impl_to_rpc_data_type!(String, i64);
+macro_rules! impl_to_rpc_data_to_string {
+    ($($type:ty),*) => {
+        $(
+            impl RPCData for $type {
+                fn rpc_raw_data(&self) -> String {
+                    self.to_string()
+                }
+            }
+        )*
+    };
+}
+
+impl_to_rpc_data_type_v!(String, i64);
+impl_to_rpc_data_to_string!(i64);
 
 impl RPCData for String {
     fn rpc_raw_data(&self) -> String {
         format!("\"{}\"", self.to_string())
-    }
-}
-
-impl RPCData for i64 {
-    fn rpc_raw_data(&self) -> String {
-        self.to_string()
     }
 }
 

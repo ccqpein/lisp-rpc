@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, RPCData)]
 pub struct {{ name }} {
 {%- for field in fields %}
 {% if field.comment -%}

@@ -9,10 +9,10 @@ pub mod generater;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::{default, env, fs};
+use std::{env, fs};
 use tera::Tera;
 use url::Url;
 
@@ -21,24 +21,10 @@ pub use def_package::*;
 pub use def_rpc::*;
 pub use generater::*;
 
-#[derive(Debug)]
-enum SpecErrorType {
-    InvalidInput,
-}
+static RPC_LIB_HEADER: &str = r#"use super::*;
+use lisp_rpc_rust_generator_macro::*;
 
-#[derive(Debug)]
-struct SpecError {
-    msg: String,
-    err_type: SpecErrorType,
-}
-
-impl std::fmt::Display for SpecError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl Error for SpecError {}
+"#;
 
 pub enum TargetFile {
     Lib,
@@ -123,7 +109,7 @@ impl SpecFile {
         tera.add_template_files(all_temps)?;
 
         let mut cargo_content = String::new();
-        let mut lib_content = String::new();
+        let mut lib_content = RPC_LIB_HEADER.to_string();
         // file targets
         for s in &self.specs {
             match s.file_target() {

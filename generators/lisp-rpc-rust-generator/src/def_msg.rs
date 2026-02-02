@@ -1,9 +1,9 @@
 //! the mod that handle def-msg expr
 
-use std::{error::Error, fmt::format, fs::File, io::Cursor, os::unix::fs::FileTypeExt, path::Path};
+use std::{error::Error, io::Cursor, path::Path};
 
 use anyhow::Result;
-use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue, data::MapData};
+use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue};
 use tera::{Context, Tera};
 
 use super::*;
@@ -123,7 +123,7 @@ impl DefMsg {
             }
         };
 
-        Self::new(name, &rest_expr[1..], RPCDataType::Data)
+        Self::new(name, &rest_expr[1..], RPCDataType::Msg)
     }
 
     /// convet this spec to GeneratedStructs (self and the anonymity type)
@@ -247,7 +247,7 @@ impl DefMsg {
             bucket.push(templates.render("rpc_impl", &context)?);
         }
 
-        Ok(bucket.join("\n\n"))
+        Ok(bucket.join("\n\n") + "\n\n")
     }
 }
 
@@ -289,7 +289,7 @@ mod tests {
                     Expr::Atom(Atom::read_keyword("lang")),
                     Expr::Quote(Box::new(Expr::Atom(Atom::read("string"))))
                 ],
-                msg_ty: RPCDataType::Data,
+                msg_ty: RPCDataType::Msg
             }
         );
 
@@ -305,7 +305,7 @@ mod tests {
                     Expr::Atom(Atom::read_keyword("lang")),
                     Expr::Quote(Box::new(Expr::Atom(Atom::read("string"))))
                 ],
-                msg_ty: RPCDataType::Data,
+                msg_ty: RPCDataType::Msg,
             }
         );
 
@@ -323,7 +323,7 @@ mod tests {
                     Expr::Atom(Atom::read_keyword("version")),
                     Expr::Quote(Box::new(Expr::Atom(Atom::read("number"))))
                 ],
-                msg_ty: RPCDataType::Data,
+                msg_ty: RPCDataType::Msg,
             }
         );
     }
@@ -349,7 +349,7 @@ mod tests {
                     GeneratedField::new("id", "string", None),
                 ],
                 None,
-                RPCDataType::Data,
+                RPCDataType::Msg,
             ),],
         );
 
@@ -385,7 +385,7 @@ mod tests {
                         GeneratedField::new("id", "string", None),
                     ],
                     None,
-                    RPCDataType::Data,
+                    RPCDataType::Msg,
                 ),
             ],
         );
@@ -422,7 +422,7 @@ mod tests {
                         GeneratedField::new("id", "string", None),
                     ],
                     None,
-                    RPCDataType::Data,
+                    RPCDataType::Msg,
                 ),
             ],
         );
@@ -442,7 +442,7 @@ mod tests {
                     GeneratedField::new("version", "string", None),
                 ],
                 None,
-                RPCDataType::Data,
+                RPCDataType::Msg,
             ),],
         );
     }
@@ -461,17 +461,14 @@ mod tests {
 
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug)]
+            r#"#[derive(Debug, RPCData)]
 pub struct LanguagePerfer {
     lang: String,
 }
 
-impl ToRPCData for LanguagePerfer {
-    fn to_rpc(&self) -> String {
-        format!(
-            "(language-perfer :lang {})",
-            self.lang.to_rpc()
-        )
+impl ToRPCType for LanguagePerfer {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Msg("language-perfer".to_string())
     }
 }"#
         );
@@ -481,19 +478,15 @@ impl ToRPCData for LanguagePerfer {
         let dm = DefMsg::from_str(case, Default::default()).unwrap();
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug)]
+            r#"#[derive(Debug, RPCData)]
 pub struct LanguagePerfer {
     lang: String,
     version: i64,
 }
 
-impl ToRPCData for LanguagePerfer {
-    fn to_rpc(&self) -> String {
-        format!(
-            "(language-perfer :lang {} :version {})",
-            self.lang.to_rpc(),
-            self.version.to_rpc()
-        )
+impl ToRPCType for LanguagePerfer {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Msg("language-perfer".to_string())
     }
 }"#
         );
@@ -509,23 +502,19 @@ impl ToRPCData for LanguagePerfer {
         //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug)]
+            r#"#[derive(Debug, RPCData)]
 pub struct BookInfoLang {
     a: String,
     b: i64,
 }
 
-impl ToRPCData for BookInfoLang {
-    fn to_rpc(&self) -> String {
-        format!(
-            "'(:a {} :b {})",
-            self.a.to_rpc(),
-            self.b.to_rpc()
-        )
+impl ToRPCType for BookInfoLang {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Map
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, RPCData)]
 pub struct BookInfo {
     lang: BookInfoLang,
     title: String,
@@ -533,15 +522,9 @@ pub struct BookInfo {
     id: String,
 }
 
-impl ToRPCData for BookInfo {
-    fn to_rpc(&self) -> String {
-        format!(
-            "(book-info :lang {} :title {} :version {} :id {})",
-            self.lang.to_rpc(),
-            self.title.to_rpc(),
-            self.version.to_rpc(),
-            self.id.to_rpc()
-        )
+impl ToRPCType for BookInfo {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Msg("book-info".to_string())
     }
 }"#
         );

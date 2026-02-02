@@ -183,7 +183,7 @@ impl DefRPC {
             None,
             fields,
             None,
-            RPCDataType::Data,
+            RPCDataType::Rpc,
         ));
 
         Ok(res)
@@ -226,7 +226,7 @@ impl DefRPC {
             bucket.push(templates.render("rpc_impl", &context)?);
         }
 
-        Ok(bucket.join("\n\n"))
+        Ok(bucket.join("\n\n") + "\n\n")
     }
 }
 
@@ -330,7 +330,7 @@ mod tests {
                     GeneratedField::new("lang", "language-perfer", None),
                 ],
                 None,
-                RPCDataType::Data,
+                RPCDataType::Rpc,
             ),]
         );
 
@@ -349,7 +349,7 @@ mod tests {
                     GeneratedField::new("lang", "language-perfer", None),
                 ],
                 None,
-                RPCDataType::Data,
+                RPCDataType::Rpc,
             ),]
         );
 
@@ -380,7 +380,7 @@ mod tests {
                         GeneratedField::new("lang", "get-book-lang", None),
                     ],
                     None,
-                    RPCDataType::Data,
+                    RPCDataType::Rpc,
                 ),
             ]
         );
@@ -412,7 +412,7 @@ mod tests {
                         GeneratedField::new("lang", "get-book-lang", None),
                     ],
                     None,
-                    RPCDataType::Data,
+                    RPCDataType::Rpc,
                 ),
             ]
         )
@@ -435,37 +435,28 @@ mod tests {
 
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug)]
+            r#"#[derive(Debug, RPCData)]
 pub struct GetBookLang {
     lang: String,
     encoding: i64,
 }
 
-impl ToRPCData for GetBookLang {
-    fn to_rpc(&self) -> String {
-        format!(
-            "'(:lang {} :encoding {})",
-            self.lang.to_rpc(),
-            self.encoding.to_rpc()
-        )
+impl ToRPCType for GetBookLang {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Map
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, RPCData)]
 pub struct GetBook {
     title: String,
     version: String,
     lang: GetBookLang,
 }
 
-impl ToRPCData for GetBook {
-    fn to_rpc(&self) -> String {
-        format!(
-            "(get-book :title {} :version {} :lang {})",
-            self.title.to_rpc(),
-            self.version.to_rpc(),
-            self.lang.to_rpc()
-        )
+impl ToRPCType for GetBook {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::RPC("get-book".to_string())
     }
 }"#
         );

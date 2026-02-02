@@ -6,7 +6,8 @@ use tera::Context;
 pub enum RPCDataType {
     Map,
     List,
-    Data,
+    Msg,
+    Rpc,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -81,9 +82,13 @@ impl GeneratedStruct {
             RPCDataType::List => {
                 ctx.insert("ty", "list");
             }
-            RPCDataType::Data => {
+            RPCDataType::Msg => {
                 ctx.insert("data_name", &self.data_name);
-                ctx.insert("ty", "data");
+                ctx.insert("ty", "msg");
+            }
+            RPCDataType::Rpc => {
+                ctx.insert("data_name", &self.data_name);
+                ctx.insert("ty", "rpc");
             }
         }
     }
@@ -113,7 +118,7 @@ mod tests {
             ],
             comment: None,
             data_name: "name".to_string(),
-            rpc_type: RPCDataType::Data,
+            rpc_type: RPCDataType::Msg,
         };
 
         context.insert("name", &s.name);
@@ -122,7 +127,7 @@ mod tests {
         //dbg!(tera.render("test", &context).unwrap());
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"#[derive(Debug)]
+            r#"#[derive(Debug, RPCData)]
 pub struct name {
     a: String,
     a: i64,
@@ -136,7 +141,7 @@ pub struct name {
             fields: vec![],
             comment: None,
             data_name: "name".to_string(),
-            rpc_type: RPCDataType::Data,
+            rpc_type: RPCDataType::Msg,
         };
 
         context.insert("name", &s.name);
@@ -145,7 +150,7 @@ pub struct name {
         //dbg!(tera.render("test", &context).unwrap());
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"#[derive(Debug)]
+            r#"#[derive(Debug, RPCData)]
 pub struct name {
 }"#
         );
@@ -169,23 +174,19 @@ pub struct name {
             ],
             comment: None,
             data_name: "name".to_string(),
-            rpc_type: RPCDataType::Data,
+            rpc_type: RPCDataType::Msg,
         };
 
         context.insert("name", &s.name);
         context.insert("fields", &s.fields);
         context.insert("data_name", &s.data_name);
-        context.insert("ty", "data");
+        context.insert("ty", "msg");
         //dbg!(tera.render("test", &context).unwrap());
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"impl ToRPCData for name {
-    fn to_rpc(&self) -> String {
-        format!(
-            "(name :a {} :a {})",
-            self.a.to_rpc(),
-            self.a.to_rpc()
-        )
+            r#"impl ToRPCType for name {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Msg("name".to_string())
     }
 }"#
         );
@@ -197,13 +198,9 @@ pub struct name {
         context.insert("ty", "map");
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"impl ToRPCData for name {
-    fn to_rpc(&self) -> String {
-        format!(
-            "'(:a {} :a {})",
-            self.a.to_rpc(),
-            self.a.to_rpc()
-        )
+            r#"impl ToRPCType for name {
+    fn to_rpc_type(&self) -> RPCType {
+        RPCType::Map
     }
 }"#
         );
