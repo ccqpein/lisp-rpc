@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+  "parsers/lisp-rpc-rust-parser",
+  "generators/lisp-rpc-rust-generator",
+  "generators/lisp-rpc-rust-generator-macro",
+]
+
+
+[workspace.dependencies]
+lisp-rpc-rust-parser = { path = "parsers/lisp-rpc-rust-parser" }
+lisp-rpc-rust-generator = { path = "generators/lisp-rpc-rust-generator" }
+lisp-rpc-rust-generator-macro = { path = "generators/lisp-rpc-rust-generator-macro" }
