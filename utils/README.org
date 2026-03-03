@@ -1,0 +1,18 @@
+* README
+
+~utils~ contains several tools.
+
+** Test the spec legal or not
+
+check the spec file:
+
+#+begin_src lisp
+  (lisp-rpc-checker:spec-check-file "spec-file")
+#+end_src
+
+** Test the util
+
+#+begin_src lisp
+  (ql:quickload "utils")
+  (asdf:test-system :utils)
+#+end_src

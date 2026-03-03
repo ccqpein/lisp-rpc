@@ -1,5 +1,3 @@
-(ql:quickload '("str" "alexandria" "fiveam"))
-
 (defpackage test-lisp-rpc
   (:use #:cl #:lisp-rpc-checker)
   (:import-from #:fiveam

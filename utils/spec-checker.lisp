@@ -1,7 +1,6 @@
-(ql:quickload '("str" "alexandria"))
-
 (defpackage lisp-rpc-checker
-  (:use #:cl))
+  (:use #:cl)
+  (:export #:spec-check-file))
 
 (in-package :lisp-rpc-checker)
 
