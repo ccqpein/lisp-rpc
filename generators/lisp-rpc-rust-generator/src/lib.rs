@@ -178,7 +178,7 @@ impl<'s> Iterator for SpecFileIter<'s> {
 // help functions below
 //
 
-/// helper function
+/// helper function kebab_to_pascal_case
 pub fn kebab_to_pascal_case(s: &str) -> String {
     s.split('-')
         .map(|segment| {
@@ -191,7 +191,7 @@ pub fn kebab_to_pascal_case(s: &str) -> String {
         .collect()
 }
 
-/// helper function
+/// helper function kebab_to_snake_case
 pub fn kebab_to_snake_case(s: &str) -> String {
     s.replace('-', "_")
 }

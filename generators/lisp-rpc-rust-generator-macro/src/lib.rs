@@ -21,6 +21,7 @@ fn to_kebab_case(s: &str) -> String {
     result
 }
 
+/// the proc macro that auto impl several features for generated code
 #[proc_macro_derive(RPCData)]
 pub fn rpc_data_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
