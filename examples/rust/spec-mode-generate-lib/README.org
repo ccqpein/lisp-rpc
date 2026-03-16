@@ -10,3 +10,5 @@ For debugging:
           --templates-path ../../../generators/lisp-rpc-rust-generator/templates/ \
           --output-path .
 #+end_src
+
+#+RESULTS:
