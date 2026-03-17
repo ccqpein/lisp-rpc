@@ -1,7 +1,8 @@
 [package]
-name = "serializer"
+name = "lisp-rpc-serializer"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-serde = "1"
+serde = { version = "1", features = ["derive"] }
+convert_case = "0"
