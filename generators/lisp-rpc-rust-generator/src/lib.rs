@@ -16,6 +16,8 @@ use std::{env, fs};
 use tera::Tera;
 use url::Url;
 
+use convert_case::{Case, Casing};
+
 pub use def_msg::*;
 pub use def_package::*;
 pub use def_rpc::*;
@@ -178,22 +180,16 @@ impl<'s> Iterator for SpecFileIter<'s> {
 // help functions below
 //
 
+//:= this function can just be replace by to_case
 /// helper function kebab_to_pascal_case
 pub fn kebab_to_pascal_case(s: &str) -> String {
-    s.split('-')
-        .map(|segment| {
-            let mut chars = segment.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(first_char) => first_char.to_ascii_uppercase().to_string() + chars.as_str(),
-            }
-        })
-        .collect()
+    s.to_case(Case::Pascal)
 }
 
+//:= this function can just be replace by to_case
 /// helper function kebab_to_snake_case
 pub fn kebab_to_snake_case(s: &str) -> String {
-    s.replace('-', "_")
+    s.to_case(Case::Snake)
 }
 
 /// the function translate the type, the sym's first chat is upper because the kebab_to_pascal_case

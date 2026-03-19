@@ -11,3 +11,4 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 url = "2"
 anyhow = "1"
+convert_case = "0"
