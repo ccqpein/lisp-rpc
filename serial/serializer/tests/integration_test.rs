@@ -1,7 +1,7 @@
 use lisp_rpc_serializer::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LanguagePerfer {
     lang: String,
 }
@@ -12,7 +12,7 @@ impl ToRPCType for LanguagePerfer {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BookInfo {
     lang: LanguagePerfer,
     title: String,
@@ -26,11 +26,11 @@ impl ToRPCType for BookInfo {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetBook {
     title: String,
     version: String,
-    lang: GetBookLang,
+    lang: GetBookLangTmp,
     authors: Authors,
 }
 
@@ -40,19 +40,19 @@ impl ToRPCType for GetBook {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct GetBookLang {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetBookLangTmp {
     lang: String,
     encoding: i64,
 }
 
-impl ToRPCType for GetBookLang {
+impl ToRPCType for GetBookLangTmp {
     fn to_rpc_type(&self) -> RPCType {
         RPCType::Map
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Authors {
     names: Vec<String>,
 }
@@ -100,14 +100,17 @@ fn test_advance_serialization() {
     let gb = GetBook {
         title: "aa".to_string(),
         version: "v1".to_string(),
-        //:= after the LispRPCMapSerializer, finish this test
-        lang: GetBookLang {
-            lang: todo!(),
-            encoding: todo!(),
+        lang: GetBookLangTmp {
+            lang: "eng".to_string(),
+            encoding: 64,
         },
-        authors: todo!(),
+        authors: Authors { names: vec![] },
     };
 
     gb.serialize(&mut s).unwrap();
-    dbg!(s.output);
+    dbg!(&s.output);
+
+    let mut ds = LispRPCDeserializer::from_str(&s.output);
+    let gbd = GetBook::deserialize(&mut ds).unwrap();
+    dbg!(gbd);
 }

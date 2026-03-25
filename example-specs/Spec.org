@@ -54,6 +54,8 @@ this mode will generate the client and server lib for other use. It give the mor
 it should look like:
 
 #+begin_src lisp
+  (def-rpc-package demo)
+
   (def-msg language-perfer :lang 'string)
 
   (def-msg book-info
@@ -63,14 +65,18 @@ it should look like:
     :id 'string)
 
   (def-rpc get-book
-      (:title 'string :vesion 'string :lang (:lang 'string :encoding 'number))
+      '(:title 'string :version 'string
+        :lang '(:lang 'string :encoding 'number)
+        :authors 'authors)
     'book-info)
+
+  (def-msg authors :names '(list 'string))
 #+end_src
 
 if will generate the client/server libs. Client just given the data struct which can generate the data that send to server like plain mode:
 
 #+begin_src lisp
-  (get-book :title "hello world" :version "1984" :lang (:lang "english" :encoding 77))
+  (get-book :title "hello world" :version "1984" :lang '(:lang "english" :encoding 77))
 #+end_src
 
 return the response ~book-info~
@@ -84,7 +90,7 @@ server side also can use the data struct but parse the data to the languages' st
 for define the list type, it should be. The first element should be un-quoted list
 
 #+begin_src lisp
-  (def-msg language-perfers :langs '(list 'string))
+  (def-msg language-perfers :langs (list 'string))
 #+end_src
 
 ** Types
@@ -95,7 +101,7 @@ In [[*Nest data][Nest data]], it shows the all data types lisp rpc support:
   ex: (data-name :keyword-1 value1 :keyword-2 value2)
 + list
   ex: '(1 2 3 4)
-+ map
++ map (anonymously data)
   ex: '(:first 1 :second 2 :third 3)
 
 primary types:
@@ -112,5 +118,5 @@ list and map type can only be define anonymously. Ex.
 
 #+begin_src lisp
   (def-msg language-perfers :langs (list 'string)) ;; list type define for :langs
-  (def-msg user :name (:first 'string :second 'string)) ;; map type define for :name
+  (def-msg user :name '(:first 'string :second 'string)) ;; map type define for :name
 #+end_src

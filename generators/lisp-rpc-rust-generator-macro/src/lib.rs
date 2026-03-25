@@ -1,24 +1,12 @@
 extern crate proc_macro;
 
+use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
 fn to_kebab_case(s: &str) -> String {
-    let mut result = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() {
-            if i != 0 {
-                result.push('-');
-            }
-            result.push(c.to_ascii_lowercase());
-        } else if c == '_' {
-            result.push('-');
-        } else {
-            result.push(c);
-        }
-    }
-    result
+    s.to_case(Case::Kebab)
 }
 
 /// the proc macro that auto impl several features for generated code
