@@ -1,5 +1,5 @@
 [package]
-name = "lisp-rpc-serializer"
+name = "lisp-rpc-rust-serializer"
 version = "0.1.0"
 edition = "2024"
 
