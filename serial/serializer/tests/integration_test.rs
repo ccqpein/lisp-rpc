@@ -6,12 +6,6 @@ pub struct LanguagePerfer {
     lang: String,
 }
 
-impl ToRPCType for LanguagePerfer {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Msg("language-perfer".to_string())
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BookInfo {
     lang: LanguagePerfer,
@@ -20,13 +14,7 @@ pub struct BookInfo {
     id: String,
 }
 
-impl ToRPCType for BookInfo {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Msg("book-info".to_string())
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct GetBook {
     title: String,
     version: String,
@@ -34,33 +22,15 @@ pub struct GetBook {
     authors: Authors,
 }
 
-impl ToRPCType for GetBook {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::RPC("get-book".to_string())
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct GetBookLangTmp {
     lang: String,
     encoding: i64,
 }
 
-impl ToRPCType for GetBookLangTmp {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Map
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Authors {
     names: Vec<String>,
-}
-
-impl ToRPCType for Authors {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Msg("authors".to_string())
-    }
 }
 
 #[test]
@@ -74,7 +44,9 @@ fn test_basic_serialization() {
     };
 
     lp.serialize(&mut s).unwrap();
-    dbg!(s.output);
+    //dbg!(s.output);
+
+    assert_eq!(s.output, r#"(language-perfer :lang "eng")"#)
 }
 
 #[test]
@@ -88,7 +60,8 @@ fn test_seq_serialization() {
     };
 
     a.serialize(&mut s).unwrap();
-    dbg!(s.output);
+    //dbg!(s.output);
+    assert_eq!(s.output, r#"(authors :names '("James bond" "Steve Jobs"))"#)
 }
 
 #[test]
@@ -108,9 +81,14 @@ fn test_advance_serialization() {
     };
 
     gb.serialize(&mut s).unwrap();
-    dbg!(&s.output);
+    //dbg!(&s.output);
+
+    assert_eq!(
+        &s.output,
+        r#"(get-book :title "aa" :version "v1" :lang (get-book-lang-tmp :lang "eng" :encoding 64) :authors (authors :names '()))"#
+    );
 
     let mut ds = LispRPCDeserializer::from_str(&s.output);
     let gbd = GetBook::deserialize(&mut ds).unwrap();
-    dbg!(gbd);
+    assert_eq!(gbd, gb);
 }
