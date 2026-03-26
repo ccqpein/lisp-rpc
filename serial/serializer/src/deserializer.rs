@@ -2,7 +2,6 @@ use crate::*;
 
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 
-use convert_case::{Case, Casing};
 
 pub struct LispRPCDeserializer<'de> {
     pub input: &'de str,
@@ -195,21 +194,21 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         self.deserialize_str(visitor)
     }
 
-    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         Err(LispRPCSerializerError::NotSupport)
     }
 
-    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         Err(LispRPCSerializerError::NotSupport)
     }
 
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -275,7 +274,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         self.deserialize_seq(visitor)
     }
 
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -350,7 +349,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         self.deserialize_any(visitor)
     }
 
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {

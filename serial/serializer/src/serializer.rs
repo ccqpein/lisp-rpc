@@ -1,4 +1,3 @@
-use crate::*;
 
 use std::{
     error::Error as StdError,
@@ -79,7 +78,7 @@ impl<'a> SerializeTuple for &'a mut LispRPCSerializer {
 
     type Error = LispRPCSerializerError;
 
-    fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn serialize_element<T>(&mut self, _value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -96,7 +95,7 @@ impl<'a> SerializeTupleStruct for &'a mut LispRPCSerializer {
 
     type Error = LispRPCSerializerError;
 
-    fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn serialize_field<T>(&mut self, _value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -113,14 +112,14 @@ impl<'a> SerializeMap for &'a mut LispRPCSerializer {
 
     type Error = LispRPCSerializerError;
 
-    fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
+    fn serialize_key<T>(&mut self, _key: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + Serialize,
     {
         Err(LispRPCSerializerError::NotSupport)
     }
 
-    fn serialize_value<T>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn serialize_value<T>(&mut self, _value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -137,7 +136,7 @@ impl<'a> SerializeTupleVariant for &'a mut LispRPCSerializer {
 
     type Error = LispRPCSerializerError;
 
-    fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn serialize_field<T>(&mut self, _value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -154,7 +153,7 @@ impl<'a> SerializeStructVariant for &'a mut LispRPCSerializer {
 
     type Error = LispRPCSerializerError;
 
-    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
+    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -268,7 +267,7 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
         Ok(())
     }
 
-    fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
+    fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok, Self::Error> {
         Err(LispRPCSerializerError::NotSupport)
     }
 
@@ -287,23 +286,23 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
         Err(LispRPCSerializerError::NotSupport)
     }
 
-    fn serialize_unit_struct(self, name: &'static str) -> Result<Self::Ok, Self::Error> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
         Err(LispRPCSerializerError::NotSupport)
     }
 
     fn serialize_unit_variant(
         self,
-        name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
     ) -> Result<Self::Ok, Self::Error> {
         Err(LispRPCSerializerError::NotSupport)
     }
 
     fn serialize_newtype_struct<T>(
         self,
-        name: &'static str,
-        value: &T,
+        _name: &'static str,
+        _value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
         T: ?Sized + Serialize,
@@ -313,10 +312,10 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
 
     fn serialize_newtype_variant<T>(
         self,
-        name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
-        value: &T,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
         T: ?Sized + Serialize,
@@ -324,41 +323,41 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
         Err(LispRPCSerializerError::NotSupport)
     }
 
-    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
+    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         self.output += "'(";
         Ok(self)
     }
 
-    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
+    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
         Err(LispRPCSerializerError::NotSupport)
     }
 
     fn serialize_tuple_struct(
         self,
-        name: &'static str,
-        len: usize,
+        _name: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
         Err(LispRPCSerializerError::NotSupport)
     }
 
     fn serialize_tuple_variant(
         self,
-        name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
-        len: usize,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         Err(LispRPCSerializerError::NotSupport)
     }
 
-    fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         Err(LispRPCSerializerError::NotSupport)
     }
 
     fn serialize_struct(
         self,
         name: &'static str,
-        len: usize,
+        _len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
         self.output.push('(');
         self.output.push_str(&name.to_case(Case::Kebab));
@@ -367,10 +366,10 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
 
     fn serialize_struct_variant(
         self,
-        name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
-        len: usize,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Err(LispRPCSerializerError::NotSupport)
     }
