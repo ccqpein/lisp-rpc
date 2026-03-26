@@ -1,0 +1,3 @@
+* README
+
+This is the macro lib that impl the derive macro ~RPCData~
