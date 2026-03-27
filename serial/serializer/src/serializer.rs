@@ -1,4 +1,3 @@
-
 use std::{
     error::Error as StdError,
     fmt::{self, Display},
@@ -49,6 +48,14 @@ impl serde::de::Error for LispRPCSerializerError {
 /// the serializer of Msg/RPC/List (Vec)/V RPCType
 pub struct LispRPCSerializer {
     pub output: String,
+}
+
+impl LispRPCSerializer {
+    pub fn new() -> Self {
+        Self {
+            output: String::new(),
+        }
+    }
 }
 
 impl<'a> SerializeSeq for &'a mut LispRPCSerializer {

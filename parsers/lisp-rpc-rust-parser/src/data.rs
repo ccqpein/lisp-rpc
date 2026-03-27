@@ -584,9 +584,8 @@ impl FromIterator<(String, Data)> for DataMap {
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches::assert_matches;
-
     use super::*;
+    use std::assert_matches;
 
     #[test]
     fn test_read_data_from_str() {

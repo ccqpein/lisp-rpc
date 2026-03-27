@@ -1,4 +1,4 @@
-use lisp_rpc_serializer::*;
+use lisp_rpc_rust_serializer::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
