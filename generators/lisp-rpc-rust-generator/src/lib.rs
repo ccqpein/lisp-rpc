@@ -23,10 +23,8 @@ pub use def_package::*;
 pub use def_rpc::*;
 pub use generater::*;
 
-static RPC_LIB_HEADER: &str = r#"use super::*;
-use lisp_rpc_rust_generator_macro::*;
-
-"#;
+/// the rpc lib header
+static RPC_LIB_HEADER: &str = include_str!("../templates/rpc_lib_header");
 
 pub enum TargetFile {
     Lib,

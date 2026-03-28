@@ -2,10 +2,10 @@
 //!
 //! The first symbol is the name of data, and everything else are the "arguments"
 
-use std::{cell::OnceCell, collections::HashMap, env, error::Error, io::Cursor};
+use std::{cell::OnceCell, collections::HashMap, error::Error, io::Cursor};
 
 use itertools::Itertools;
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{Atom, Expr, Parser, TypeValue, impl_into_data_for_numbers};
 

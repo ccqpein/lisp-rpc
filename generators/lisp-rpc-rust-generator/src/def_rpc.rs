@@ -1,7 +1,7 @@
-use std::{error::Error, fs::File, io::Cursor, path::Path};
+use std::{error::Error, io::Cursor, path::Path};
 
 use anyhow::Result;
-use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue, data::MapData};
+use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue};
 use tera::{Context, Tera};
 
 use super::*;
