@@ -80,6 +80,7 @@ fn main() -> Result<()> {
         anyhow::bail!("templates_path has to be dir")
     }
 
+    // specs generate the code
     specs.gen_code_to_file(&args.output_path, &templates)?;
 
     // after the previous line, the folder should already created
