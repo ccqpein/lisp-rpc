@@ -12,7 +12,7 @@ struct Args {
     input_file: PathBuf,
 
     #[arg(short, long, value_name = "templates-path")]
-    templates_path: PathBuf,
+    templates_path: Option<PathBuf>,
 
     #[arg(short, long, value_name = "output-path")]
     output_path: PathBuf,
@@ -44,6 +44,44 @@ fn parse_spec_file(file: File) -> Result<SpecFile> {
     Ok(specs)
 }
 
+fn have_templates_path(
+    output_path: &PathBuf,
+    templates_path: &PathBuf,
+    specs: &SpecFile,
+) -> Result<()> {
+    // read all template file
+    let mut templates = vec![];
+    if templates_path.is_dir() {
+        for entry in fs::read_dir(templates_path)? {
+            let entry_path = entry?.path();
+            if entry_path.is_file() {
+                templates.push(
+                    entry_path
+                        .to_str()
+                        .context("cannot convert to string")?
+                        .to_string(),
+                );
+            }
+        }
+    } else {
+        anyhow::bail!("templates_path has to be dir")
+    }
+
+    // specs generate the code
+    specs.gen_code_to_files_with_templates(output_path, &templates)?;
+
+    // after the previous line, the folder should already created
+    fs::copy(
+        templates_path.join("lib.rs"),
+        output_path
+            .join(specs.get_target_pkg_name().context("no pkg name")?)
+            .join("src/lib.rs"),
+    )
+    .with_context(|| "copy failed")?;
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -62,36 +100,10 @@ fn main() -> Result<()> {
     let file = File::open(input_path)?;
     let specs = parse_spec_file(file)?;
 
-    // read all template file
-    let mut templates = vec![];
-    if args.templates_path.is_dir() {
-        for entry in fs::read_dir(&args.templates_path)? {
-            let entry_path = entry?.path();
-            if entry_path.is_file() {
-                templates.push(
-                    entry_path
-                        .to_str()
-                        .context("cannot convert to string")?
-                        .to_string(),
-                );
-            }
-        }
-    } else {
-        anyhow::bail!("templates_path has to be dir")
+    match args.templates_path.as_ref() {
+        Some(templates_path) => have_templates_path(&args.output_path, templates_path, &specs)?,
+        None => todo!(),
     }
-
-    // specs generate the code
-    specs.gen_code_to_file(&args.output_path, &templates)?;
-
-    // after the previous line, the folder should already created
-    fs::copy(
-        &args.templates_path.join("lib.rs"),
-        &args
-            .output_path
-            .join(specs.get_target_pkg_name().context("no pkg name")?)
-            .join("src/lib.rs"),
-    )
-    .with_context(|| "copy failed")?;
 
     Ok(())
 }

@@ -89,8 +89,10 @@ impl SpecFile {
         self.target_pkg_name = Some(name)
     }
 
-    /// write the cargo toml and the lib file
-    pub fn gen_code_to_file(
+    pub fn gen_code_to_files_raw() {}
+
+    /// write the cargo toml and all other lib files
+    pub fn gen_code_to_files_with_templates(
         &self,
         output_path: &PathBuf,
         templates: &[impl AsRef<Path>],
