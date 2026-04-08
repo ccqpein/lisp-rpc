@@ -89,10 +89,19 @@ impl SpecFile {
         self.target_pkg_name = Some(name)
     }
 
-    pub fn gen_code_to_files_raw() {}
+    pub fn gen_code_raw_template(
+        &self,
+        output_path: &PathBuf,
+        embedded_files: impl Iterator<Item = (String, String)>,
+    ) -> Result<()> {
+        let mut tera = Tera::default();
+
+        tera.add_raw_templates(embedded_files)?;
+        self.gen_code(output_path, tera)
+    }
 
     /// write the cargo toml and all other lib files
-    pub fn gen_code_to_files_with_templates(
+    pub fn gen_code_with_templates_files(
         &self,
         output_path: &PathBuf,
         templates: &[impl AsRef<Path>],
@@ -102,6 +111,7 @@ impl SpecFile {
         for p in templates {
             match p.as_ref().file_stem().map(|n| n.to_str()) {
                 Some(n) => {
+                    // n is the name without the `.template` suffix
                     all_temps.push((p, n));
                 }
                 None => (),
@@ -110,6 +120,10 @@ impl SpecFile {
 
         tera.add_template_files(all_temps)?;
 
+        self.gen_code(output_path, tera)
+    }
+
+    fn gen_code(&self, output_path: &PathBuf, tera: Tera) -> Result<()> {
         let mut cargo_content = String::new();
         let mut lib_content = RPC_LIB_HEADER.to_string();
         // file targets

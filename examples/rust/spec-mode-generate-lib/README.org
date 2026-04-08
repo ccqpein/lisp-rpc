@@ -12,3 +12,13 @@ For debugging:
 #+end_src
 
 #+RESULTS:
+
+or without using the template folder, use the embedding templates
+
+#+begin_src shell
+  ../../../target/debug/lisp-rpc-rust-generator \
+          --input-file spec.lisprpc\
+          --output-path .
+#+end_src
+
+#+RESULTS:
