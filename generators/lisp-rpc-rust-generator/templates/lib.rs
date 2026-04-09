@@ -1,4 +1,5 @@
-mod rpc_libs;
+pub mod rpc_libs;
+pub mod rpc_server;
 
 #[derive(Debug)]
 enum RPCType {
