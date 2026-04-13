@@ -194,13 +194,11 @@ impl<'s> Iterator for SpecFileIter<'s> {
 // help functions below
 //
 
-//:= this function can just be replace by to_case
 /// helper function kebab_to_pascal_case
 pub fn kebab_to_pascal_case(s: &str) -> String {
     s.to_case(Case::Pascal)
 }
 
-//:= this function can just be replace by to_case
 /// helper function kebab_to_snake_case
 pub fn kebab_to_snake_case(s: &str) -> String {
     s.to_case(Case::Snake)

@@ -1,15 +1,11 @@
-impl ToRPCType for {{ name }} {
-    fn to_rpc_type(&self) -> RPCType {
-        {%- if ty == "msg" %}
-        RPCType::Msg("{{ data_name }}".to_string())
-        {%- elif ty == "rpc" %}
-        RPCType::RPC("{{ data_name }}".to_string())
-        {%- elif ty == "map" %}
-        RPCType::Map
-        {%- elif ty == "list" %}
-        RPCType::List
-        {%- else %}
-        RPCType::V
-        {%- endif %}
-    }
-}
+impl_to_rpc!({{ name }}, {% if ty == "msg" -%}
+    RPCType::Msg("{{ data_name }}".to_string())
+{%- elif ty == "rpc" -%}
+    RPCType::RPC("{{ data_name }}".to_string())
+{%- elif ty == "map" -%}
+    RPCType::Map
+{%- elif ty == "list" -%}
+    RPCType::List
+{%- else -%}
+    RPCType::V
+{%- endif -%});
