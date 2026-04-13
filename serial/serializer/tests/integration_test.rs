@@ -35,7 +35,7 @@ pub struct Authors {
 
 #[test]
 fn test_basic_serialization() {
-    let mut buf = [0u8; 1024];
+    let mut buf = Vec::with_capacity(1024);
     let mut s = LispRPCSerializer::new(&mut buf);
 
     let lp = LanguagePerfer {
@@ -53,7 +53,7 @@ fn test_basic_serialization() {
 
 #[test]
 fn test_seq_serialization() {
-    let mut buf = [0u8; 1024];
+    let mut buf = Vec::with_capacity(1024);
     let mut s = LispRPCSerializer::new(&mut buf);
 
     let a = Authors {
@@ -70,7 +70,7 @@ fn test_seq_serialization() {
 
 #[test]
 fn test_advance_serialization() {
-    let mut buf = [0u8; 1024];
+    let mut buf = Vec::with_capacity(1024);
     let mut s = LispRPCSerializer::new(&mut buf);
 
     let gb = GetBook {

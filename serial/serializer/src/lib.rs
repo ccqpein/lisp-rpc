@@ -19,7 +19,7 @@ pub fn lisp_rpc_to_str(v: impl Serialize) -> Result<String> {
 }
 
 /// entry function that serialize the lisp rpc struct with buffer
-pub fn lisp_rpc_to_buf(v: impl Serialize, buffer: &mut [u8]) -> Result<usize> {
+pub fn lisp_rpc_to_buf(v: impl Serialize, buffer: &mut Vec<u8>) -> Result<usize> {
     let mut _s = serializer::LispRPCSerializer::new(buffer);
     v.serialize(&mut _s)?;
     Ok(_s.pos)

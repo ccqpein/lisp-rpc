@@ -1,7 +1,6 @@
 use std::{
     error::Error as StdError,
     fmt::{self, Display},
-    io::Write,
 };
 
 use serde::ser::{
@@ -51,12 +50,12 @@ impl serde::de::Error for LispRPCSerializerError {
 
 /// the serializer of Msg/RPC/List (Vec)/V RPCType
 pub struct LispRPCSerializer<'s> {
-    pub output: &'s mut [u8],
+    pub output: &'s mut Vec<u8>,
     pub pos: usize,
 }
 
 impl<'s> LispRPCSerializer<'s> {
-    pub fn new(buffer: &'s mut [u8]) -> Self {
+    pub fn new(buffer: &'s mut Vec<u8>) -> Self {
         Self {
             output: buffer,
             pos: 0,
@@ -64,12 +63,7 @@ impl<'s> LispRPCSerializer<'s> {
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), LispRPCSerializerError> {
-        if self.pos + bytes.len() > self.output.len() {
-            return Err(LispRPCSerializerError::BufferOverflow(
-                "buffer overflow".to_string(),
-            ));
-        }
-        self.output[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
+        self.output.extend_from_slice(bytes);
         self.pos += bytes.len();
         Ok(())
     }
@@ -250,11 +244,7 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
     }
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        let mut writer = &mut self.output[self.pos..];
-        let initial_len = writer.len();
-        write!(writer, "{}", v).map_err(|e| LispRPCSerializerError::Msg(e.to_string()))?;
-        self.pos += initial_len - writer.len();
-        Ok(())
+        self.write_bytes(v.to_string().as_bytes())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
@@ -270,11 +260,7 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        let mut writer = &mut self.output[self.pos..];
-        let initial_len = writer.len();
-        write!(writer, "{}", v).map_err(|e| LispRPCSerializerError::Msg(e.to_string()))?;
-        self.pos += initial_len - writer.len();
-        Ok(())
+        self.write_bytes(v.to_string().as_bytes())
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
@@ -282,11 +268,7 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        let mut writer = &mut self.output[self.pos..];
-        let initial_len = writer.len();
-        write!(writer, "{}", v).map_err(|e| LispRPCSerializerError::Msg(e.to_string()))?;
-        self.pos += initial_len - writer.len();
-        Ok(())
+        self.write_bytes(v.to_string().as_bytes())
     }
 
     fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
