@@ -1,6 +1,7 @@
 use std::{
     error::Error as StdError,
     fmt::{self, Display},
+    io::Write,
 };
 
 use serde::ser::{
@@ -13,13 +14,16 @@ use convert_case::{Case, Casing};
 #[derive(Debug)]
 pub enum LispRPCSerializerError {
     Msg(String),
+    BufferOverflow(String),
     NotSupport,
 }
 
 impl fmt::Display for LispRPCSerializerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LispRPCSerializerError::Msg(msg) => f.write_str(msg),
+            LispRPCSerializerError::Msg(msg) | LispRPCSerializerError::BufferOverflow(msg) => {
+                f.write_str(msg)
+            }
             LispRPCSerializerError::NotSupport => f.write_str("not support"),
         }
     }
@@ -46,19 +50,32 @@ impl serde::de::Error for LispRPCSerializerError {
 }
 
 /// the serializer of Msg/RPC/List (Vec)/V RPCType
-pub struct LispRPCSerializer {
-    pub output: String,
+pub struct LispRPCSerializer<'s> {
+    pub output: &'s mut [u8],
+    pub pos: usize,
 }
 
-impl LispRPCSerializer {
-    pub fn new() -> Self {
+impl<'s> LispRPCSerializer<'s> {
+    pub fn new(buffer: &'s mut [u8]) -> Self {
         Self {
-            output: String::new(),
+            output: buffer,
+            pos: 0,
         }
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), LispRPCSerializerError> {
+        if self.pos + bytes.len() > self.output.len() {
+            return Err(LispRPCSerializerError::BufferOverflow(
+                "buffer overflow".to_string(),
+            ));
+        }
+        self.output[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
+        self.pos += bytes.len();
+        Ok(())
     }
 }
 
-impl<'a> SerializeSeq for &'a mut LispRPCSerializer {
+impl<'a, 's: 'a> SerializeSeq for &'a mut LispRPCSerializer<'s> {
     type Ok = ();
 
     type Error = LispRPCSerializerError;
@@ -67,20 +84,20 @@ impl<'a> SerializeSeq for &'a mut LispRPCSerializer {
     where
         T: ?Sized + Serialize,
     {
-        if !self.output.ends_with("'(") {
-            self.output += " ";
+        if !self.output[..self.pos].ends_with(b"'(") {
+            self.write_bytes(b" ")?;
         }
 
         value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.output += ")";
+        self.write_bytes(b")")?;
         Ok(())
     }
 }
 
-impl<'a> SerializeTuple for &'a mut LispRPCSerializer {
+impl<'a, 's: 'a> SerializeTuple for &'a mut LispRPCSerializer<'s> {
     type Ok = ();
 
     type Error = LispRPCSerializerError;
@@ -97,7 +114,7 @@ impl<'a> SerializeTuple for &'a mut LispRPCSerializer {
     }
 }
 
-impl<'a> SerializeTupleStruct for &'a mut LispRPCSerializer {
+impl<'a, 's: 'a> SerializeTupleStruct for &'a mut LispRPCSerializer<'s> {
     type Ok = ();
 
     type Error = LispRPCSerializerError;
@@ -114,7 +131,7 @@ impl<'a> SerializeTupleStruct for &'a mut LispRPCSerializer {
     }
 }
 
-impl<'a> SerializeMap for &'a mut LispRPCSerializer {
+impl<'a, 's: 'a> SerializeMap for &'a mut LispRPCSerializer<'s> {
     type Ok = ();
 
     type Error = LispRPCSerializerError;
@@ -138,7 +155,7 @@ impl<'a> SerializeMap for &'a mut LispRPCSerializer {
     }
 }
 
-impl<'a> SerializeTupleVariant for &'a mut LispRPCSerializer {
+impl<'a, 's: 'a> SerializeTupleVariant for &'a mut LispRPCSerializer<'s> {
     type Ok = ();
 
     type Error = LispRPCSerializerError;
@@ -155,7 +172,7 @@ impl<'a> SerializeTupleVariant for &'a mut LispRPCSerializer {
     }
 }
 
-impl<'a> SerializeStructVariant for &'a mut LispRPCSerializer {
+impl<'a, 's: 'a> SerializeStructVariant for &'a mut LispRPCSerializer<'s> {
     type Ok = ();
 
     type Error = LispRPCSerializerError;
@@ -172,7 +189,7 @@ impl<'a> SerializeStructVariant for &'a mut LispRPCSerializer {
     }
 }
 
-impl<'a> SerializeStruct for &'a mut LispRPCSerializer {
+impl<'a, 's: 'a> SerializeStruct for &'a mut LispRPCSerializer<'s> {
     type Ok = ();
 
     type Error = LispRPCSerializerError;
@@ -181,22 +198,22 @@ impl<'a> SerializeStruct for &'a mut LispRPCSerializer {
     where
         T: ?Sized + Serialize,
     {
-        self.output.push_str(" :");
-        self.output.push_str(key);
-        self.output.push_str(" ");
+        self.write_bytes(b" :")?;
+        self.write_bytes(key.as_bytes())?;
+        self.write_bytes(b" ")?;
 
         value.serialize(&mut **self)?;
         Ok(())
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.output.push(')');
+        self.write_bytes(b")")?;
         Ok(())
     }
 }
 
 /// impl the Serializer, most important one is struct and primary types
-impl<'a> Serializer for &'a mut LispRPCSerializer {
+impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
     type Ok = ();
 
     type Error = LispRPCSerializerError;
@@ -216,7 +233,7 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
     type SerializeStructVariant = Self;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        self.output += if v { "t" } else { "nil" };
+        self.write_bytes(if v { b"t" } else { b"nil" })?;
         Ok(())
     }
 
@@ -233,7 +250,10 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
     }
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        self.output += &v.to_string();
+        let mut writer = &mut self.output[self.pos..];
+        let initial_len = writer.len();
+        write!(writer, "{}", v).map_err(|e| LispRPCSerializerError::Msg(e.to_string()))?;
+        self.pos += initial_len - writer.len();
         Ok(())
     }
 
@@ -250,7 +270,10 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        self.output += &v.to_string();
+        let mut writer = &mut self.output[self.pos..];
+        let initial_len = writer.len();
+        write!(writer, "{}", v).map_err(|e| LispRPCSerializerError::Msg(e.to_string()))?;
+        self.pos += initial_len - writer.len();
         Ok(())
     }
 
@@ -259,7 +282,10 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        self.output += &v.to_string();
+        let mut writer = &mut self.output[self.pos..];
+        let initial_len = writer.len();
+        write!(writer, "{}", v).map_err(|e| LispRPCSerializerError::Msg(e.to_string()))?;
+        self.pos += initial_len - writer.len();
         Ok(())
     }
 
@@ -268,9 +294,9 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        self.output.push_str("\"");
-        self.output.push_str(v);
-        self.output.push_str("\"");
+        self.write_bytes(b"\"")?;
+        self.write_bytes(v.as_bytes())?;
+        self.write_bytes(b"\"")?;
         Ok(())
     }
 
@@ -331,7 +357,7 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        self.output += "'(";
+        self.write_bytes(b"'(")?;
         Ok(self)
     }
 
@@ -366,8 +392,8 @@ impl<'a> Serializer for &'a mut LispRPCSerializer {
         name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        self.output.push('(');
-        self.output.push_str(&name.to_case(Case::Kebab));
+        self.write_bytes(b"(")?;
+        self.write_bytes(name.to_case(Case::Kebab).as_bytes())?;
         Ok(self)
     }
 

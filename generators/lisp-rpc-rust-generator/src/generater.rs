@@ -127,7 +127,7 @@ mod tests {
         //dbg!(tera.render("test", &context).unwrap());
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"#[derive(Debug, RPCData)]
+            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct name {
     a: String,
     a: i64,
@@ -150,7 +150,7 @@ pub struct name {
         //dbg!(tera.render("test", &context).unwrap());
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"#[derive(Debug, RPCData)]
+            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct name {
 }"#
         );
@@ -184,11 +184,7 @@ pub struct name {
         //dbg!(tera.render("test", &context).unwrap());
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"impl ToRPCType for name {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Msg("name".to_string())
-    }
-}"#
+            r#"impl_to_rpc!(name, RPCType::Msg("name".to_string()));"#
         );
 
         //
@@ -198,11 +194,7 @@ pub struct name {
         context.insert("ty", "map");
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"impl ToRPCType for name {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Map
-    }
-}"#
+            r#"impl_to_rpc!(name, RPCType::Map);"#
         );
     }
 }

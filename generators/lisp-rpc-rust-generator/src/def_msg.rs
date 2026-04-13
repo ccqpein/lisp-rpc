@@ -1,9 +1,11 @@
 //! the mod that handle def-msg expr
 
-use std::{error::Error, io::Cursor, path::Path};
+use std::{error::Error, path::Path};
 
 use anyhow::Result;
-use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue};
+#[cfg(test)]
+use lisp_rpc_rust_parser::Parser;
+use lisp_rpc_rust_parser::{Atom, Expr, TypeValue};
 use tera::{Context, Tera};
 
 use super::*;
@@ -21,7 +23,7 @@ struct DefMsgError {
 
 impl std::fmt::Display for DefMsgError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{:?}: {}", self.err_type, self.msg)
     }
 }
 
@@ -65,7 +67,10 @@ impl DefMsg {
     }
 
     /// make new def msg from str
+    #[cfg(test)]
     fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
+        use std::io::Cursor;
+
         let mut p = match parser {
             Some(p) => p,
             None => Default::default(),
@@ -461,16 +466,12 @@ mod tests {
 
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, RPCData)]
+            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LanguagePerfer {
     lang: String,
 }
 
-impl ToRPCType for LanguagePerfer {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Msg("language-perfer".to_string())
-    }
-}"#
+impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
         );
 
         //
@@ -478,17 +479,13 @@ impl ToRPCType for LanguagePerfer {
         let dm = DefMsg::from_str(case, Default::default()).unwrap();
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, RPCData)]
+            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LanguagePerfer {
     lang: String,
     version: i64,
 }
 
-impl ToRPCType for LanguagePerfer {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Msg("language-perfer".to_string())
-    }
-}"#
+impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
         );
 
         //
@@ -502,19 +499,15 @@ impl ToRPCType for LanguagePerfer {
         //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, RPCData)]
+            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BookInfoLang {
     a: String,
     b: i64,
 }
 
-impl ToRPCType for BookInfoLang {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Map
-    }
-}
+impl_to_rpc!(BookInfoLang, RPCType::Map);
 
-#[derive(Debug, RPCData)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BookInfo {
     lang: BookInfoLang,
     title: String,
@@ -522,11 +515,7 @@ pub struct BookInfo {
     id: String,
 }
 
-impl ToRPCType for BookInfo {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Msg("book-info".to_string())
-    }
-}"#
+impl_to_rpc!(BookInfo, RPCType::Msg("book-info".to_string()));"#
         );
     }
 }

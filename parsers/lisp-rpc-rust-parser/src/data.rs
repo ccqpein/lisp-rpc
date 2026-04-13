@@ -558,6 +558,7 @@ impl DataMap {
         }
     }
 
+    #[cfg(test)]
     pub fn to_string(&self) -> String {
         self.hash_map
             .iter()

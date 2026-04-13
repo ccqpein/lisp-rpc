@@ -1,7 +1,12 @@
-use std::{error::Error, io::Cursor, path::Path};
+#[cfg(test)]
+use lisp_rpc_rust_parser::Parser;
+#[cfg(test)]
+use std::io::Cursor;
+
+use std::{error::Error, path::Path};
 
 use anyhow::Result;
-use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue};
+use lisp_rpc_rust_parser::{Atom, Expr, TypeValue};
 use tera::{Context, Tera};
 
 use super::*;
@@ -19,7 +24,7 @@ struct DefRPCError {
 
 impl std::fmt::Display for DefRPCError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{:?}: {}", self.err_type, self.msg)
     }
 }
 
@@ -37,6 +42,7 @@ pub struct DefRPC {
 }
 
 impl DefRPC {
+    #[cfg(test)]
     fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         let mut p = match parser {
             Some(p) => p,
@@ -435,30 +441,22 @@ mod tests {
 
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, RPCData)]
+            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GetBookLang {
     lang: String,
     encoding: i64,
 }
 
-impl ToRPCType for GetBookLang {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::Map
-    }
-}
+impl_to_rpc!(GetBookLang, RPCType::Map);
 
-#[derive(Debug, RPCData)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GetBook {
     title: String,
     version: String,
     lang: GetBookLang,
 }
 
-impl ToRPCType for GetBook {
-    fn to_rpc_type(&self) -> RPCType {
-        RPCType::RPC("get-book".to_string())
-    }
-}"#
+impl_to_rpc!(GetBook, RPCType::RPC("get-book".to_string()));"#
         );
     }
 }

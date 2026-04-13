@@ -1,8 +1,11 @@
+#[cfg(test)]
+use lisp_rpc_rust_parser::Parser;
+#[cfg(test)]
 use std::io::Cursor;
 
 use super::*;
 use anyhow::Context;
-use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue};
+use lisp_rpc_rust_parser::{Atom, Expr, TypeValue};
 use tera::Tera;
 
 #[derive(Debug)]
@@ -18,7 +21,7 @@ struct DefPkgError {
 
 impl std::fmt::Display for DefPkgError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{:?}: {}", self.err_type, self.msg)
     }
 }
 
@@ -84,6 +87,7 @@ impl DefPkg {
         })
     }
 
+    #[cfg(test)]
     fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         let mut p = match parser {
             Some(p) => p,
@@ -178,7 +182,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-"#,
+actix-web = "4"
+anyhow = "1"
+lisp-rpc-rust-serializer = { git = "https://github.com/ccQpein/lisp-rpc" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+env_logger = "0""#,
         )
     }
 }

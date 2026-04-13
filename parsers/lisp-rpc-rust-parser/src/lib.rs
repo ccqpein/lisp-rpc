@@ -1,5 +1,4 @@
 #![feature(iter_array_chunks)]
-#![feature(assert_matches)]
 pub mod data;
 mod macros;
 
