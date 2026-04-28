@@ -46,7 +46,6 @@ and
   (get-sum-number :argumets '(:first 1 :second 2 :third 3))
 #+end_src
 
-
 ** Spec mode
 
 this mode will generate the client and server lib for other use. It give the more standard of api, pre-check, and some useful functions.
@@ -70,7 +69,7 @@ it should look like:
         :authors 'authors)
     'book-info)
 
-  (def-msg authors :names '(list 'string))
+  (def-msg authors :names (list 'string))
 #+end_src
 
 if will generate the client/server libs. Client just given the data struct which can generate the data that send to server like plain mode:

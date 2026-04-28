@@ -15,20 +15,14 @@ pub struct GeneratedField {
     pub name: String,
     pub field_type: String,
     pub comment: Option<String>,
-
-    /// the original keyword name
-    /// for insert the impl block of gen_data
-    key_name: String,
 }
 
 impl GeneratedField {
-    pub fn new(key_name: &str, field_type: &str, comment: Option<String>) -> Self {
+    pub fn new(name: String, field_type: String, comment: Option<String>) -> Self {
         Self {
-            name: kebab_to_snake_case(key_name),
-            field_type: type_translate(field_type),
+            name: name,
+            field_type: field_type,
             comment,
-
-            key_name: key_name.to_string(),
         }
     }
 }
@@ -113,8 +107,8 @@ mod tests {
             name: "name".to_string(),
             derived_traits: None,
             fields: vec![
-                GeneratedField::new("a", "string", None),
-                GeneratedField::new("a", "number", None),
+                GeneratedField::new("a".to_string(), "String".to_string(), None),
+                GeneratedField::new("a".to_string(), "i64".to_string(), None),
             ],
             comment: None,
             data_name: "name".to_string(),
@@ -169,8 +163,8 @@ pub struct name {
             name: "name".to_string(),
             derived_traits: None,
             fields: vec![
-                GeneratedField::new("a", "string", None),
-                GeneratedField::new("a", "number", None),
+                GeneratedField::new("a".to_string(), "String".to_string(), None),
+                GeneratedField::new("a".to_string(), "i64".to_string(), None),
             ],
             comment: None,
             data_name: "name".to_string(),

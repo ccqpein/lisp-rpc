@@ -209,6 +209,7 @@ pub fn type_translate(sym: &str) -> String {
     match kebab_to_pascal_case(sym).as_str() {
         "Number" => "i64".to_string(),
         s @ _ => s.to_string(),
+        //_ => sym.to_string(),
     }
 }
 
@@ -294,4 +295,22 @@ fn copy_recursive(source: &Path, destination: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_type_translate() {
+        assert_eq!(type_translate("string"), "String");
+
+        assert_eq!(type_translate("number"), "i64");
+
+        // caution: type_translate will make String become string
+        assert_eq!(type_translate("Vec<String>"), "Vec<string>");
+
+        assert_eq!(type_translate("a-b-c"), "ABC");
+    }
 }
