@@ -218,7 +218,6 @@ impl DefMsg {
 
         res.push(GeneratedStruct::new(
             &self.msg_name,
-            None,
             fields,
             None,
             self.msg_ty.clone(),
@@ -358,7 +357,6 @@ mod tests {
             x.create_gen_structs().unwrap(),
             vec![GeneratedStruct::new(
                 "book-info",
-                None,
                 vec![
                     GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None),
                     GeneratedField::new("title".to_string(), "String".to_string(), None),
@@ -384,7 +382,6 @@ mod tests {
             vec![
                 GeneratedStruct::new(
                     "book-info-lang",
-                    None,
                     vec![
                         GeneratedField::new("a".to_string(), "String".to_string(), None),
                         GeneratedField::new("b".to_string(), "i64".to_string(), None),
@@ -394,7 +391,6 @@ mod tests {
                 ),
                 GeneratedStruct::new(
                     "book-info",
-                    None,
                     vec![
                         GeneratedField::new("lang".to_string(), "BookInfoLang".to_string(), None),
                         GeneratedField::new("title".to_string(), "String".to_string(), None),
@@ -421,7 +417,6 @@ mod tests {
             vec![
                 GeneratedStruct::new(
                     "book-info-lang",
-                    None,
                     vec![
                         GeneratedField::new("a".to_string(), "String".to_string(), None),
                         GeneratedField::new("b".to_string(), "i64".to_string(), None),
@@ -431,7 +426,6 @@ mod tests {
                 ),
                 GeneratedStruct::new(
                     "book-info",
-                    None,
                     vec![
                         GeneratedField::new("lang".to_string(), "BookInfoLang".to_string(), None),
                         GeneratedField::new("title".to_string(), "String".to_string(), None),
@@ -456,7 +450,6 @@ mod tests {
             x.create_gen_structs().unwrap(),
             vec![GeneratedStruct::new(
                 "book-info",
-                None,
                 vec![
                     GeneratedField::new("langs".to_string(), "Vec<String>".to_string(), None),
                     GeneratedField::new("version".to_string(), "String".to_string(), None),
@@ -473,7 +466,6 @@ mod tests {
             x.create_gen_structs().unwrap(),
             vec![GeneratedStruct::new(
                 "authors",
-                None,
                 vec![GeneratedField::new(
                     "names_a".to_string(),
                     "Vec<String>".to_string(),

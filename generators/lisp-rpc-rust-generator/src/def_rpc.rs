@@ -231,7 +231,6 @@ impl DefRPC {
 
         res.push(GeneratedStruct::new(
             &self.rpc_name,
-            None,
             fields,
             None,
             RPCDataType::Rpc,
@@ -374,7 +373,6 @@ mod tests {
             dr.create_gen_structs().unwrap(),
             vec![GeneratedStruct::new(
                 "get-book",
-                None,
                 vec![
                     GeneratedField::new("title".to_string(), "String".to_string(), None),
                     GeneratedField::new("version".to_string(), "String".to_string(), None),
@@ -393,7 +391,6 @@ mod tests {
             dr.create_gen_structs().unwrap(),
             vec![GeneratedStruct::new(
                 "get-book",
-                None,
                 vec![
                     GeneratedField::new("title".to_string(), "String".to_string(), None),
                     GeneratedField::new("version_aaa".to_string(), "String".to_string(), None),
@@ -414,7 +411,6 @@ mod tests {
             vec![
                 GeneratedStruct::new(
                     "get-book-lang",
-                    None,
                     vec![
                         GeneratedField::new("lang".to_string(), "String".to_string(), None),
                         GeneratedField::new("encoding".to_string(), "i64".to_string(), None),
@@ -424,7 +420,6 @@ mod tests {
                 ),
                 GeneratedStruct::new(
                     "get-book",
-                    None,
                     vec![
                         GeneratedField::new("title".to_string(), "String".to_string(), None),
                         GeneratedField::new("version".to_string(), "String".to_string(), None),
@@ -446,7 +441,6 @@ mod tests {
             vec![
                 GeneratedStruct::new(
                     "get-book-lang",
-                    None,
                     vec![
                         GeneratedField::new("lang".to_string(), "String".to_string(), None),
                         GeneratedField::new("encoding".to_string(), "i64".to_string(), None),
@@ -456,7 +450,6 @@ mod tests {
                 ),
                 GeneratedStruct::new(
                     "get-book",
-                    None,
                     vec![
                         GeneratedField::new("title".to_string(), "String".to_string(), None),
                         GeneratedField::new("version".to_string(), "String".to_string(), None),

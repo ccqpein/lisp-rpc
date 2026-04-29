@@ -32,7 +32,6 @@ impl GeneratedField {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct GeneratedStruct {
     pub name: String,
-    pub derived_traits: Option<Vec<String>>,
     pub fields: Vec<GeneratedField>,
     pub comment: Option<String>,
 
@@ -48,14 +47,12 @@ pub struct GeneratedStruct {
 impl GeneratedStruct {
     pub fn new(
         data_name: &str,
-        derived_traits: Option<Vec<String>>,
         fields: Vec<GeneratedField>,
         comment: Option<String>,
         ty: RPCDataType,
     ) -> Self {
         Self {
             name: kebab_to_pascal_case(data_name),
-            derived_traits,
             fields,
             comment,
 
@@ -105,7 +102,6 @@ mod tests {
 
         let s = GeneratedStruct {
             name: "name".to_string(),
-            derived_traits: None,
             fields: vec![
                 GeneratedField::new("a".to_string(), "String".to_string(), None),
                 GeneratedField::new("a".to_string(), "i64".to_string(), None),
@@ -131,7 +127,6 @@ pub struct name {
         // empty fields
         let s = GeneratedStruct {
             name: "name".to_string(),
-            derived_traits: None,
             fields: vec![],
             comment: None,
             data_name: "name".to_string(),
@@ -161,7 +156,6 @@ pub struct name {
 
         let s = GeneratedStruct {
             name: "name".to_string(),
-            derived_traits: None,
             fields: vec![
                 GeneratedField::new("a".to_string(), "String".to_string(), None),
                 GeneratedField::new("a".to_string(), "i64".to_string(), None),
