@@ -13,7 +13,7 @@ use serde::ser::{
 use convert_case::{Case, Casing};
 
 /// Global registry of struct names that should be serialized as maps
-static GLOBAL_MAP_TYPES: LazyLock<RwLock<HashSet<&'static str>>> = 
+pub static GLOBAL_MAP_TYPES: LazyLock<RwLock<HashSet<&'static str>>> =
     LazyLock::new(|| RwLock::new(HashSet::new()));
 
 /// Register a struct name globally to always be serialized as a map
