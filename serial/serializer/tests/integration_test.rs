@@ -1,12 +1,12 @@
 use lisp_rpc_rust_serializer::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LanguagePerfer {
     lang: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookInfo {
     lang: LanguagePerfer,
     title: String,
@@ -45,10 +45,12 @@ fn test_basic_serialization() {
     lp.serialize(&mut s).unwrap();
     //dbg!(s.output);
 
-    assert_eq!(
-        std::str::from_utf8(&s.output[..s.pos]).unwrap(),
-        r#"(language-perfer :lang "eng")"#
-    )
+    let serialized = std::str::from_utf8(&s.output[..s.pos]).unwrap();
+    assert_eq!(serialized, r#"(language-perfer :lang "eng")"#);
+
+    let mut ds = LispRPCDeserializer::from_str(serialized);
+    let lpd = LanguagePerfer::deserialize(&mut ds).unwrap();
+    assert_eq!(lpd, lp);
 }
 
 #[test]
@@ -80,7 +82,9 @@ fn test_advance_serialization() {
             lang: "eng".to_string(),
             encoding: 64,
         },
-        authors: Authors { names: vec![] },
+        authors: Authors {
+            names: vec!["a".to_string()],
+        },
     };
 
     gb.serialize(&mut s).unwrap();
@@ -89,10 +93,31 @@ fn test_advance_serialization() {
     let serialized = std::str::from_utf8(&s.output[..s.pos]).unwrap();
     assert_eq!(
         serialized,
-        r#"(get-book :title "aa" :version "v1" :lang (get-book-lang-tmp :lang "eng" :encoding 64) :authors (authors :names '()))"#
+        r#"(get-book :title "aa" :version "v1" :lang (get-book-lang-tmp :lang "eng" :encoding 64) :authors (authors :names '("a")))"#
     );
 
     let mut ds = LispRPCDeserializer::from_str(serialized);
     let gbd = GetBook::deserialize(&mut ds).unwrap();
     assert_eq!(gbd, gb);
+}
+
+#[test]
+fn test_map_serialization() {
+    let mut buf = Vec::with_capacity(1024);
+    let mut s = LispRPCMapSerializer::new(&mut buf);
+
+    let lp = LanguagePerfer {
+        lang: "eng".to_string(),
+    };
+
+    lp.serialize(&mut s).unwrap();
+    //dbg!(s.output);
+
+    let serialized =
+        std::str::from_utf8(&s.general_serializer.output[..s.general_serializer.pos]).unwrap();
+    assert_eq!(serialized, r#"'(:lang "eng")"#);
+
+    let mut ds = LispRPCDeserializer::from_str(serialized);
+    let lpd = LanguagePerfer::deserialize(&mut ds).unwrap();
+    assert_eq!(lpd, lp);
 }

@@ -2,7 +2,6 @@ use crate::*;
 
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 
-
 pub struct LispRPCDeserializer<'de> {
     pub input: &'de str,
 }
@@ -31,7 +30,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         self.eat_whitespace();
         match self.peek_char() {
             Some('\"') => self.deserialize_str(visitor),
-            Some('\'') => self.deserialize_seq(visitor),
+            Some('\'') => {
+                if self.input.starts_with("'(:") {
+                    self.deserialize_map(visitor)
+                } else {
+                    self.deserialize_seq(visitor)
+                }
+            }
             Some('(') => self.deserialize_struct("", &[], visitor),
             Some('t') => self.deserialize_bool(visitor),
             Some('n') => self.deserialize_bool(visitor),
@@ -274,11 +279,24 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         self.deserialize_seq(visitor)
     }
 
-    fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        Err(LispRPCSerializerError::NotSupport)
+        self.eat_whitespace();
+        if !self.input.starts_with("'(") {
+            return Err(LispRPCSerializerError::Msg("expected '(".to_string()));
+        }
+        self.input = &self.input[2..];
+
+        let value = visitor.visit_map(LispRPCMapAccess { de: self })?;
+
+        self.eat_whitespace();
+        if !self.input.starts_with(')') {
+            return Err(LispRPCSerializerError::Msg("expected )".to_string()));
+        }
+        self.input = &self.input[1..];
+        Ok(value)
     }
 
     fn deserialize_struct<V>(
@@ -291,6 +309,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         V: Visitor<'de>,
     {
         self.eat_whitespace();
+        if self.input.starts_with("'(") {
+            return self.deserialize_map(visitor);
+        }
+
         if !self.input.starts_with('(') {
             return Err(LispRPCSerializerError::Msg(format!(
                 "expected (, found {}",
@@ -306,7 +328,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
             .ok_or_else(|| LispRPCSerializerError::Msg("unexpected end".to_string()))?;
         self.input = &self.input[end..];
 
-        let value = visitor.visit_map(LispRPCStructAccess { de: self })?;
+        let value = visitor.visit_map(LispRPCMapAccess { de: self })?;
 
         self.eat_whitespace();
         if !self.input.starts_with(')') {
@@ -376,11 +398,11 @@ impl<'de, 'a> SeqAccess<'de> for LispRPCSeqAccess<'a, 'de> {
     }
 }
 
-struct LispRPCStructAccess<'a, 'de: 'a> {
+struct LispRPCMapAccess<'a, 'de: 'a> {
     de: &'a mut LispRPCDeserializer<'de>,
 }
 
-impl<'de, 'a> MapAccess<'de> for LispRPCStructAccess<'a, 'de> {
+impl<'de, 'a> MapAccess<'de> for LispRPCMapAccess<'a, 'de> {
     type Error = LispRPCSerializerError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
