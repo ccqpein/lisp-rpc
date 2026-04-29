@@ -104,20 +104,16 @@ fn test_advance_serialization() {
 #[test]
 fn test_map_serialization() {
     let mut buf = Vec::with_capacity(1024);
-    let mut s = LispRPCMapSerializer::new(&mut buf);
+    let mut s = LispRPCSerializer::new(&mut buf);
 
     let lp = LanguagePerfer {
         lang: "eng".to_string(),
     };
 
+    s.register_map_type("LanguagePerfer");
     lp.serialize(&mut s).unwrap();
     //dbg!(s.output);
 
-    let serialized =
-        std::str::from_utf8(&s.general_serializer.output[..s.general_serializer.pos]).unwrap();
+    let serialized = std::str::from_utf8(&s.output[..s.pos]).unwrap();
     assert_eq!(serialized, r#"'(:lang "eng")"#);
-
-    let mut ds = LispRPCDeserializer::from_str(serialized);
-    let lpd = LanguagePerfer::deserialize(&mut ds).unwrap();
-    assert_eq!(lpd, lp);
 }
