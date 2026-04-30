@@ -41,7 +41,7 @@ pub struct GeneratedStruct {
 
     /// different types have different data format
     /// this for detect which is which
-    rpc_type: RPCDataType,
+    pub rpc_type: RPCDataType,
 }
 
 impl GeneratedStruct {
@@ -221,6 +221,25 @@ pub struct name {
         assert_eq!(
             tera.render("test", &context).unwrap(),
             r#"impl_to_rpc!(name, RPCType::Map);"#
+        );
+    }
+
+    #[test]
+    fn test_generate_init_func() {
+        let temp = include_str!("../templates/init.template");
+        let mut tera = Tera::default();
+        let mut context = Context::new();
+
+        tera.add_raw_template("init", temp).unwrap();
+
+        context.insert("map_types", &["A", "B"]);
+        assert_eq!(
+            tera.render("init", &context).unwrap(),
+            r#"pub fn init() {
+    register_global_map_type("A");
+    register_global_map_type("B");
+}
+"#
         );
     }
 }

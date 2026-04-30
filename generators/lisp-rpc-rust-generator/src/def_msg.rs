@@ -247,12 +247,8 @@ impl DefMsg {
 }
 
 impl RPCSpec for DefMsg {
-    fn gen_code_with_temp_files(&self, temp_file_paths: &[String]) -> Result<String> {
-        self.gen_code_with_files(temp_file_paths)
-    }
-
-    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
-        self.gen_code_with_tera(templates)
+    fn as_lib(&self) -> Option<&dyn RPCSpecLib> {
+        Some(self)
     }
 
     fn file_target(&self) -> TargetFile {
@@ -261,6 +257,12 @@ impl RPCSpec for DefMsg {
 
     fn symbol_name(&self) -> String {
         self.msg_name.clone()
+    }
+}
+
+impl RPCSpecLib for DefMsg {
+    fn generate_structs(&self) -> Result<Vec<GeneratedStruct>> {
+        self.create_gen_structs()
     }
 }
 

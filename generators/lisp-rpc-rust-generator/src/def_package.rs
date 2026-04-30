@@ -131,20 +131,26 @@ impl DefPkg {
 }
 
 impl RPCSpec for DefPkg {
-    fn gen_code_with_temp_files(&self, temp_file_paths: &[String]) -> Result<String> {
-        self.gen_code_with_files(temp_file_paths)
-    }
-
-    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
-        self.gen_code_with_tera(templates)
-    }
-
     fn file_target(&self) -> TargetFile {
         TargetFile::Cargo
     }
 
     fn symbol_name(&self) -> String {
         self.pkg_name.clone()
+    }
+
+    fn as_cargo(&self) -> Option<&dyn RPCSpecCargo> {
+        Some(self)
+    }
+}
+
+impl RPCSpecCargo for DefPkg {
+    fn gen_code_with_temp_files(&self, temp_file_paths: &[String]) -> Result<String> {
+        self.gen_code_with_files(temp_file_paths)
+    }
+
+    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+        self.gen_code_with_tera(templates)
     }
 }
 

@@ -7,7 +7,7 @@ pub mod def_rpc;
 pub mod generater;
 
 use anyhow::{Context, Result};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -35,11 +35,25 @@ pub enum TargetFile {
 pub trait RPCSpec {
     fn symbol_name(&self) -> String;
 
+    fn as_lib(&self) -> Option<&dyn RPCSpecLib> {
+        None
+    }
+
+    fn as_cargo(&self) -> Option<&dyn RPCSpecCargo> {
+        None
+    }
+
+    fn file_target(&self) -> TargetFile;
+}
+
+pub trait RPCSpecLib: RPCSpec {
+    fn generate_structs(&self) -> Result<Vec<GeneratedStruct>>;
+}
+
+pub trait RPCSpecCargo: RPCSpec {
     fn gen_code_with_temp_files(&self, temp_file_paths: &[String]) -> Result<String>;
 
     fn gen_code_with_tera(&self, templates: &Tera) -> Result<String>;
-
-    fn file_target(&self) -> TargetFile;
 }
 
 /// SpecFile struct for keep the status/states whiling parsing the spec file
@@ -49,13 +63,10 @@ pub struct SpecFile {
     specs: Vec<Box<dyn RPCSpec>>,
 
     /// the cache table for checking the duplication symbol
-    sym_table: HashMap<String, bool>,
+    sym_table: HashSet<String>,
 
     /// the pkg folder, has value after read the def-package expr
     target_pkg_name: Option<String>,
-
-    /// the map types names, for generate the init function
-    map_types: Vec<String>,
 }
 
 impl<'s> IntoIterator for &'s SpecFile {
@@ -71,10 +82,6 @@ impl<'s> IntoIterator for &'s SpecFile {
 impl SpecFile {
     pub fn new() -> Self {
         Default::default()
-    }
-
-    pub fn add_map_types(&mut self, map_types: Vec<String>) {
-        self.map_types.extend(map_types);
     }
 
     pub fn record_one(&mut self, spec: Box<dyn RPCSpec>) -> Result<()> {
@@ -134,17 +141,39 @@ impl SpecFile {
         let mut cargo_content = String::new();
         let mut lib_content = RPC_LIB_HEADER.to_string();
 
+        let mut map_type_names = vec![];
+
         // file targets
         for s in &self.specs {
             match s.file_target() {
                 TargetFile::Lib => {
-                    lib_content += s.gen_code_with_tera(&tera)?.as_str();
+                    let ss = s
+                        .as_lib()
+                        .context("convert to lib file target")?
+                        .generate_structs()?;
+
+                    for s in ss {
+                        lib_content += &s.gen_code_with_tera(&tera)?;
+                        if let RPCDataType::Map = s.rpc_type {
+                            map_type_names.push(s.name)
+                        }
+
+                        lib_content += "\n\n";
+                    }
                 }
                 TargetFile::Cargo => {
-                    cargo_content += s.gen_code_with_tera(&tera)?.as_str();
+                    cargo_content += &s
+                        .as_cargo()
+                        .context("convert to cargo file target")?
+                        .gen_code_with_tera(&tera)?;
                 }
             }
         }
+
+        // start to add the init func
+        let mut context = tera::Context::new();
+        context.insert("map_types", &map_type_names);
+        lib_content += &tera.render("init", &context)?;
 
         // pkg project folder
         let lib_path = output_path.join(self.target_pkg_name.as_ref().context("no lib name")?);
@@ -217,7 +246,6 @@ pub fn type_translate(sym: &str) -> String {
     match kebab_to_pascal_case(sym).as_str() {
         "Number" => "i64".to_string(),
         s @ _ => s.to_string(),
-        //_ => sym.to_string(),
     }
 }
 
