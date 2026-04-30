@@ -3,11 +3,10 @@ use lisp_rpc_rust_parser::Parser;
 #[cfg(test)]
 use std::io::Cursor;
 
-use std::{error::Error, path::Path};
+use std::error::Error;
 
 use anyhow::Result;
 use lisp_rpc_rust_parser::{Atom, Expr, TypeValue};
-use tera::{Context, Tera};
 
 use super::*;
 
@@ -239,6 +238,7 @@ impl DefRPC {
         Ok(res)
     }
 
+    #[cfg(test)]
     fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
@@ -249,6 +249,7 @@ impl DefRPC {
     }
 
     /// Generate code with the exist tera instance
+    #[cfg(test)]
     fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {

@@ -1,12 +1,11 @@
 //! the mod that handle def-msg expr
 
-use std::{error::Error, path::Path};
+use std::error::Error;
 
 use anyhow::Result;
 #[cfg(test)]
 use lisp_rpc_rust_parser::Parser;
 use lisp_rpc_rust_parser::{Atom, Expr, TypeValue};
-use tera::{Context, Tera};
 
 use super::*;
 
@@ -226,6 +225,7 @@ impl DefMsg {
         Ok(res)
     }
 
+    #[cfg(test)]
     fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
@@ -236,6 +236,7 @@ impl DefMsg {
     }
 
     /// Generate code with the exist tera instance
+    #[cfg(test)]
     fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
