@@ -23,6 +23,13 @@ pub fn register_global_map_type(name: &'static str) {
     }
 }
 
+/// Clear all globally registered map types
+pub fn clear_global_map_types() {
+    if let Ok(mut map) = GLOBAL_MAP_TYPES.write() {
+        map.clear();
+    }
+}
+
 #[derive(Debug)]
 pub enum LispRPCSerializerError {
     Msg(String),

@@ -239,28 +239,10 @@ impl DefRPC {
         Ok(res)
     }
 
-    /// use the GeneratedStruct to generate the code
     fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
-        let mut tera = Tera::default();
-        let mut context = Context::new();
-
-        let mut all_temps = vec![];
-        for p in template_files {
-            match p.as_ref().file_stem().map(|n| n.to_str()) {
-                Some(n) => {
-                    all_temps.push((p, n));
-                }
-                None => (),
-            }
-        }
-
-        tera.add_template_files(all_temps)?;
-
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
-            s.insert_template(&mut context);
-            bucket.push(tera.render("def_struct.rs", &context)?);
-            bucket.push(tera.render("rpc_impl", &context)?);
+            bucket.push(s.gen_code_with_files(template_files)?);
         }
 
         Ok(bucket.join("\n\n"))
@@ -268,12 +250,9 @@ impl DefRPC {
 
     /// Generate code with the exist tera instance
     fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
-        let mut context = Context::new();
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
-            s.insert_template(&mut context);
-            bucket.push(templates.render("def_struct.rs", &context)?);
-            bucket.push(templates.render("rpc_impl", &context)?);
+            bucket.push(s.gen_code_with_tera(templates)?);
         }
 
         Ok(bucket.join("\n\n") + "\n\n")

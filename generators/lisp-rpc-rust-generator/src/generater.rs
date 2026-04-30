@@ -83,6 +83,44 @@ impl GeneratedStruct {
             }
         }
     }
+
+    pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
+        let mut tera = Tera::default();
+        let mut context = Context::new();
+
+        let mut all_temps = vec![];
+        for p in template_files {
+            match p.as_ref().file_stem().map(|n| n.to_str()) {
+                Some(n) => {
+                    all_temps.push((p, n));
+                }
+                None => (),
+            }
+        }
+
+        tera.add_template_files(all_temps)?;
+
+        let mut result = String::new();
+
+        self.insert_template(&mut context);
+        result += &tera.render("def_struct.rs", &context)?;
+        result += "\n\n";
+        result += &tera.render("rpc_impl", &context)?;
+
+        Ok(result)
+    }
+
+    pub fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+        let mut context = Context::new();
+
+        let mut result = String::new();
+        self.insert_template(&mut context);
+        result += &templates.render("def_struct.rs", &context)?;
+        result += "\n\n";
+        result += &templates.render("rpc_impl", &context)?;
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,5 @@
+pub fn init() {
+{% for name in map_types -%}
+    register_global_map_type("{{ name }}");
+{% endfor -%}
+}

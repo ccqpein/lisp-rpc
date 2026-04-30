@@ -53,6 +53,9 @@ pub struct SpecFile {
 
     /// the pkg folder, has value after read the def-package expr
     target_pkg_name: Option<String>,
+
+    /// the map types names, for generate the init function
+    map_types: Vec<String>,
 }
 
 impl<'s> IntoIterator for &'s SpecFile {
@@ -70,6 +73,10 @@ impl SpecFile {
         Default::default()
     }
 
+    pub fn add_map_types(&mut self, map_types: Vec<String>) {
+        self.map_types.extend(map_types);
+    }
+
     pub fn record_one(&mut self, spec: Box<dyn RPCSpec>) -> Result<()> {
         let sym_name = spec.symbol_name();
         self.specs.push(spec);
@@ -77,7 +84,7 @@ impl SpecFile {
             anyhow::bail!("sym {} already have", sym_name)
         }
 
-        self.sym_table.insert(sym_name, true);
+        self.sym_table.insert(sym_name);
         Ok(())
     }
 
@@ -126,6 +133,7 @@ impl SpecFile {
     fn gen_code(&self, output_path: &PathBuf, tera: Tera) -> Result<()> {
         let mut cargo_content = String::new();
         let mut lib_content = RPC_LIB_HEADER.to_string();
+
         // file targets
         for s in &self.specs {
             match s.file_target() {
