@@ -13,6 +13,7 @@ check the spec file:
 ** Test the util
 
 #+begin_src lisp
+  (load "./utils.asd")
   (ql:quickload "utils")
   (asdf:test-system :utils)
 #+end_src

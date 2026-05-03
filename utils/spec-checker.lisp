@@ -4,19 +4,23 @@
 
 (in-package :lisp-rpc-checker)
 
-(defparameter *example* "(def-msg language-perfer :lang 'string)
+(defparameter *example* "(def-rpc-package demo)
 
-  (def-msg book-info
-    :lang 'language-perfer
-    :title 'string
-    :version 'string
-    :id 'string)
+(def-msg language-perfer :lang 'string)
 
-  (def-rpc get-book
-      '(:title 'string :vesion 'string :lang '(:lang 'string :encoding 'number))
-    'book-info)
+(def-msg book-info
+  :lang 'language-perfer
+  :title 'string
+  :version 'string
+  :id 'string)
 
-  (def-msg language-perfers :langs '(list 'string))")
+(def-rpc get-book
+    '(:title 'string :version 'string
+      :lang '(:lang 'string :encoding 'number)
+      :authors 'authors)
+  'book-info)
+
+(def-msg authors :names (list 'string))")
 
 (defparameter *checker-map*
   (mapcar #'cons

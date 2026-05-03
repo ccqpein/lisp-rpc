@@ -12,7 +12,9 @@
   :id 'string)
 
 (def-rpc get-book
-    '(:title 'string :vesion 'string :lang '(:lang 'string :encoding 'number))
+    '(:title 'string :version 'string
+      :lang '(:lang 'string :encoding 'number)
+      :authors 'authors)
   'book-info)
 
-(def-msg authors :names '(list 'string))
+(def-msg authors :names (list 'string))

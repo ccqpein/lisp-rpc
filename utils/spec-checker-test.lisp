@@ -38,7 +38,7 @@
   (signals error (lisp-rpc-checker::def-msg-checker "a" '(:a 'string :a '(:a 1))))
   
   (is (lisp-rpc-checker::spec-check-one (read (make-string-input-stream "(def-msg language-perfer :lang 'string)"))))
-  (is (lisp-rpc-checker::spec-check-one (read (make-string-input-stream "(def-msg language-perfers :langs '(list 'string))"))))
+  (is (lisp-rpc-checker::spec-check-one (read (make-string-input-stream "(def-msg language-perfers :langs (list 'string))"))))
   (is (lisp-rpc-checker::spec-check-one (read (make-string-input-stream "(def-msg user :name '(:first 'string :second 'string))"))))
 
   ;; for def, list doesn't need to be quoted
@@ -57,7 +57,7 @@
   1)"))))
 
   (is (lisp-rpc-checker::spec-check-one (read (make-string-input-stream "(def-rpc get-book
-    (:title 'string :vesion 'string :lang (:lang 'string :encoding 'number))
+    (:title 'string :vesion 'string :lang (:lang 'string :encoding 'number) :authors 'authors)
   'book-info)")))))
 
 (test def-duplicated-symbol
