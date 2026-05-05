@@ -1,121 +1,112 @@
-* Spec
+#+TITLE: Lisp-RPC Specification
 
-** Plain mode
+* Introduction
+Lisp-RPC is a lightweight, S-expression based Remote Procedure Call protocol. It supports two modes: *Plain Mode* for direct, dynamic communication and *Spec Mode* for schema-defined, type-checked communication.
 
-client just send the Lisp type data (pure string) to server. Server get the data and return the result.
+* Data Types
+Lisp-RPC supports the following data types:
 
-It should be ~(data-name &keywords)~
+** Primary Types
++ *string*: A standard Lisp string (e.g., ="hello"=).
++ *number*: Integers or floating-point numbers (e.g., =42=, =3.14=).
++ *boolean*: Represented by =T= (true) and =NIL= (false). (Note: In S-expressions, =NIL= also represents an empty list).
 
+** Complex Types
++ *Data*: A named structure followed by keyword-value pairs.
+  + Format: =(data-name :key1 value1 :key2 value2 ...)=
+  + Example: =(book-info :title "1984" :id 1)=
++ *List*: A sequence of elements. In Plain Mode, lists must be quoted.
+  + Format: ='(item1 item2 ...)=
+  + Example: ='(1 2 3)=
++ *Map* (Anonymous Data): A collection of keyword-value pairs without a name. In Plain Mode, maps must be quoted.
+  + Format: ='(:key1 value1 :key2 value2 ...)=
+  + Example: ='(:first "John" :last "Doe")=
+
+* Plain Mode
+In Plain Mode, the client sends a raw S-expression (as a string) to the server. The server evaluates or parses the call and returns a result in the same format.
+
+** Request Format
+A request must be a *Data* type:
 #+begin_src lisp
-  (get-book :title "hello world" :version "1984")
+  (data-name :param1 value1 :param2 value2)
 #+end_src
 
-this means server receive the ~get-book~ call and receive the titles and versions as the arguments
-
-server should do the parsing job and handle the call
-
-the return format can be
-
+Example:
 #+begin_src lisp
-  (book-info :result "aaa")
+  (get-book :title "The Hobbit" :year 1937)
 #+end_src
 
-~book-info~ is the response data name. And the response format is same as request. They are ~data~ type.
-
-*** Nest data
-
-the root data (request or response) has to be ~(data-name &keywords)~ (data type). but it can have some nesty data as the value of keyword.
-
-the value of keyword can be the ~data~, ~list~, or ~map~.
-
-*data*:
-
+** Response Format
+The response is also a *Data* type:
 #+begin_src lisp
-  (get-book :some-keyword (sub-name-data :a 1 :b 2))
+  (response-name :result value :status "success")
 #+end_src
 
-list and map have to have *quote* (~'~) symbol. list just a list, map is the keyword-value pairs. (like data, but without the name)
-
+Example:
 #+begin_src lisp
-  (get-sum-number :argumets '(1 2 3))
+  (book-info :id "B123" :available T)
 #+end_src
 
-and
-
+** Nested Data
+Keywords can take *Data*, *List*, or *Map* types as values.
 #+begin_src lisp
-  (get-sum-number :argumets '(:first 1 :second 2 :third 3))
+  (update-user :id 1 :profile '(:email "a@b.com" :tags '("admin" "staff")))
 #+end_src
 
-** Spec mode
+* Spec Mode
+Spec Mode allows defining a formal schema for the RPC interface. This enables automatic library generation, type checking, and better error handling.
 
-this mode will generate the client and server lib for other use. It give the more standard of api, pre-check, and some useful functions.
-
-it should look like:
-
+** Defining a Package
 #+begin_src lisp
-  (def-rpc-package demo)
+  (def-rpc-package package-name)
+#+end_src
 
-  (def-msg language-perfer :lang 'string)
+** Defining Messages (Data Structures)
+Use =def-msg= to define reusable data structures.
+#+begin_src lisp
+  (def-msg message-name :key1 'type1 :key2 'type2 ...)
+#+end_src
 
-  (def-msg book-info
-    :lang 'language-perfer
-    :title 'string
-    :version 'string
-    :id 'string)
+- Types can be primary types (='string=, ='number=, ='boolean=).
+- Types can be other defined messages.
+- Types can be nested lists: =(list 'type)=.
+- Types can be nested maps: ='(:k1 'type1 :k2 'type2)=. Anonymous maps MUST be quoted.
 
+Examples:
+#+begin_src lisp
+  (def-msg language-preference :lang 'string)
+
+  (def-msg author-list :names (list 'string))
+
+  (def-msg user
+    :id 'number
+    :meta '(:created-at 'string :active 'boolean)) ;; Quoted map schema
+#+end_src
+
+** Defining RPCs
+Use =def-rpc= to define a remote procedure, specifying its input schema and output message type.
+#+begin_src lisp
+  (def-rpc rpc-name
+      '(:param1 'type1 :param2 'type2 ...)
+    'response-message-name)
+#+end_src
+
+Example:
+#+begin_src lisp
   (def-rpc get-book
       '(:title 'string :version 'string
         :lang '(:lang 'string :encoding 'number)
-        :authors 'authors)
+        :authors 'author-list)
     'book-info)
-
-  (def-msg authors :names (list 'string))
 #+end_src
 
-if will generate the client/server libs. Client just given the data struct which can generate the data that send to server like plain mode:
-
-#+begin_src lisp
-  (get-book :title "hello world" :version "1984" :lang '(:lang "english" :encoding 77))
-#+end_src
-
-return the response ~book-info~
-
-#+begin_src lisp
-  (book-info :id "123" :title "hello world" :version "1984" :lang (language-perfer :lang "english"))
-#+end_src
-
-server side also can use the data struct but parse the data to the languages' struct
-
-for define the list type, it should be. The first element should be un-quoted list
-
-#+begin_src lisp
-  (def-msg language-perfers :langs (list 'string))
-#+end_src
-
-** Types
-
-In [[*Nest data][Nest data]], it shows the all data types lisp rpc support:
-
-+ data
-  ex: (data-name :keyword-1 value1 :keyword-2 value2)
-+ list
-  ex: '(1 2 3 4)
-+ map (anonymously data)
-  ex: '(:first 1 :second 2 :third 3)
-
-primary types:
-
-+ string
-+ number
-
-  
-*** Define the type
-
-in root level, we can only define the ~data~ and ~rpc~ type with ~def-rpc~ and ~def-msg~.
-
-list and map type can only be define anonymously. Ex.
-
-#+begin_src lisp
-  (def-msg language-perfers :langs (list 'string)) ;; list type define for :langs
-  (def-msg user :name '(:first 'string :second 'string)) ;; map type define for :name
-#+end_src
+* Grammar and Validation Rules
+1. *Keywords*: All keys in Data and Map types must be Lisp keywords (starting with =:=).
+2. *Quoting*:
+   - In *Plain Mode*: Lists and Maps MUST be quoted (e.g., ='(...)=).
+   - In *Spec Mode*:
+     - Types in =def-msg= are typically quoted symbols (e.g., ='string=).
+     - Anonymous maps in =def-msg= or =def-rpc= can be quoted or unquoted (depending on implementation, but consistent quoting is recommended).
+     - Lists in =def-msg= use the =(list 'type)= constructor.
+3. *Uniqueness*: Keyword names within a single Data or Map structure must be unique.
+4. *Symbols*: Use quoted symbols for type references to avoid evaluation errors in dynamic environments.
