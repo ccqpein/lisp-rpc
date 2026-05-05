@@ -1,28 +1,60 @@
-* README
+#+TITLE: Lisp-RPC
 
-** file structure
+Lisp-RPC is a lightweight, S-expression based Remote Procedure Call protocol designed for simplicity and flexibility. It supports two primary modes of operation to balance dynamic communication with type safety and performance.
 
-#+begin_quote
-+ lisp-rpc
-  + parsers (for parsing the lisp pure string data to some std data type of the language)
-    + rust
-    + golang
-    + etc.
-  + generater (use parsers and spec file to generate client/server lib code)
-    + lisp (the one for myself to developing)
-    + golang
-    + rust
-    + etc.
-  + templates (templates for generator using to generate libs)
-    + rust
-      + Cargo.toml
-      + etc.
-    + golang
-      + go.mod
-      + etc.
-    + etc.
-#+end_quote
+* Overview
 
-** some optimize ideas
+- *Plain Mode*: For direct, dynamic communication using raw S-expressions.
+- *Spec Mode*: For schema-defined, type-checked communication with automatic code generation.
 
-- [ ] parser need to read the dyn impl struct rather than the vecdeque
+* Data Types
+
+Lisp-RPC supports standard Lisp-like data structures:
+- *Primary Types*: =string=, =number=, =boolean= (represented by =T= and =NIL=).
+- *Complex Types*:
+  - *Data*: Named structures with keyword-value pairs: =(name :key value)=.
+  - *List*: Quoted sequences: ='(1 2 3)=.
+  - *Map*: Anonymous keyword-value pairs: ='(:key value)=.
+
+* Project Structure
+
+This repository is organized as a Rust workspace containing the core parser, serializer, and generators, along with examples and specifications.
+
+**  [[file:example-specs/][example-specs/]]
+
+Contains the Spec details and some examples specs
+
+**  [[file:examples/][examples/]]
+
+Practical examples demonstrating both Plain Mode and Spec Mode usage.
+
+**  [[file:generators/][generators/]]
+
+Implementation of code generators that transform =.lisprpc= specs into library code.
+
+**  [[file:parsers/][parsers/]]
+
+Core Lisp-RPC parsers (primarily Rust).
+
+**  [[file:serial/][serial/]]
+
+Core serialization and deserialization logic.
+
+**  [[file:utils/][utils/]]
+
+Helper scripts and Common Lisp utilities for protocol validation.
+
+* Usage Modes
+
+** Plain Mode
+In Plain Mode, clients send raw S-expressions as strings. The server parses these expressions dynamically.
+#+begin_src lisp
+  (get-book :title "The Hobbit" :year 1937)
+#+end_src
+
+** Spec Mode
+Spec Mode uses a formal schema defined with =def-msg= and =def-rpc=. This enables generating typed libraries for various languages.
+#+begin_src lisp
+  (def-msg book-info :title 'string :id 'number)
+  (def-rpc get-book '(:title 'string) 'book-info)
+#+end_src
