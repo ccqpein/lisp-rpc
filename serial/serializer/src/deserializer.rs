@@ -1,5 +1,6 @@
 use crate::*;
 
+use convert_case::{Case, Casing};
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 
 pub struct LispRPCDeserializer<'de> {
@@ -361,7 +362,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
             .unwrap_or(self.input.len());
         let ident = &self.input[..end];
         self.input = &self.input[end..];
-        visitor.visit_borrowed_str(ident)
+
+        visitor.visit_string(ident.to_case(Case::Snake))
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -371,11 +373,17 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         self.deserialize_any(visitor)
     }
 
-    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        Err(LispRPCSerializerError::NotSupport)
+        self.eat_whitespace();
+        if self.input.starts_with("nil") {
+            self.input = &self.input[3..];
+            visitor.visit_none()
+        } else {
+            visitor.visit_some(self)
+        }
     }
 }
 
