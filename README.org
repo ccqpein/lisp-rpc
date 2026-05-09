@@ -44,6 +44,14 @@ Core serialization and deserialization logic.
 
 Helper scripts and Common Lisp utilities for protocol validation.
 
+* Installation
+
+To install the Lisp-RPC generator tool:
+
+#+begin_src shell
+  cargo install --path generators/lisp-rpc-rust-generator
+#+end_src
+
 * Usage Modes
 
 ** Plain Mode

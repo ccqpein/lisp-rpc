@@ -17,18 +17,18 @@ Core logic that reads templates and specifications to generate code.
 After building:
 
 #+begin_src shell
-lisp-rpc-rust-generator \
-      --input-file spec.lisprpc\
+  lisp-rpc-rust-generator \
+          --input-file spec.lisprpc \
           --templates-path ./templates/ \
           --output-path .
 #+end_src
 
-I believe in most cases, we don't need give the templates folder.
+In most cases, you don't need to provide the templates folder, as the generator can use its embedded templates:
 
 #+begin_src shell
   lisp-rpc-rust-generator \
-      --input-file spec.lisprpc\
-      --output-path .
+          --input-file spec.lisprpc \
+          --output-path .
 #+end_src
 
-check the [[file:~/Code/lisp-rpc/examples/rust/spec-mode-generate-lib/][example]]
+Check the [[file:../../examples/rust/spec-mode-generate-lib/][example]] for more details.
