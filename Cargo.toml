@@ -5,6 +5,9 @@ members = [
   "generators/lisp-rpc-rust-generator",
   "generators/lisp-rpc-rust-generator-macro",
   "serial/serializer",
+
+  "examples/rust/plain-mode-read-and-write-data",
+  "examples/rust/serialize-struct-to-lisprpc",
 ]
 
 

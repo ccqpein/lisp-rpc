@@ -1,16 +1,18 @@
 * README
 
-~utils~ contains several tools.
+~utils~ contains various tools for Lisp-RPC development and validation.
 
-** Test the spec legal or not
+** Spec Validation
 
-check the spec file:
+To validate a spec file:
 
 #+begin_src lisp
   (lisp-rpc-checker:spec-check-file "spec-file")
 #+end_src
 
-** Test the util
+** Running Tests
+
+To run the utility tests:
 
 #+begin_src lisp
   (load "./utils.asd")

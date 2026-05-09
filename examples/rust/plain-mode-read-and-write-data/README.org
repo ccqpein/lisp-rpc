@@ -1,5 +1,5 @@
 * README
 
-The example that using plain mode of lisp rpc
+This example demonstrates using the plain mode of Lisp-RPC.
 
-Check the main.rs file for getting more information
+Check the ~main.rs~ file for more information.

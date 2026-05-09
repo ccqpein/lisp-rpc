@@ -22,7 +22,7 @@ This repository is organized as a Rust workspace containing the core parser, ser
 
 **  [[file:example-specs/][example-specs/]]
 
-Contains the Spec details and some examples specs
+Contains the spec details and some example specs
 
 **  [[file:examples/][examples/]]
 
@@ -54,7 +54,26 @@ In Plain Mode, clients send raw S-expressions as strings. The server parses thes
 
 ** Spec Mode
 Spec Mode uses a formal schema defined with =def-msg= and =def-rpc=. This enables generating typed libraries for various languages.
+
 #+begin_src lisp
   (def-msg book-info :title 'string :id 'number)
   (def-rpc get-book '(:title 'string) 'book-info)
 #+end_src
+
+* Examples
+
+** Serialize Structure
+
+Structures that derive ~Serialize~ and ~Deserialize~ can use ~lisp_rpc_from_str~ and ~lisp_rpc_to_str~ from ~lisp_rpc_rust_serializer~ to serialize and deserialize between the structure and the Lisp-RPC format string.
+
+Check this [[file:examples/rust/serialize-struct-to-lisprpc/][example]] for more details.
+
+** Handle the plain mode
+
+~lisp_rpc_rust_parser::data::Data~ can parse a string directly into a ~Data~ object, which can then be accessed using ~.get(keyname)~.
+
+Check this [[file:examples/rust/plain-mode-read-and-write-data/][example]] for more details.
+
+** Spec & generate mode
+
+[[file:examples/rust/spec-mode-generate-lib/][spec-mode-generate-lib]] shows how to generate the Lisp-RPC library code with the generator.
