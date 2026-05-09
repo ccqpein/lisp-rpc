@@ -1,24 +1,13 @@
 * README
 
-run the generator with the spec in this folder
+Run the generator with the spec in this folder
 
-For debugging:
+The spec file is [[file:spec.lisprpc][spec.lisprpc]].
 
-#+begin_src shell
-  ../../../target/debug/lisp-rpc-rust-generator \
-          --input-file spec.lisprpc\
-          --templates-path ../../../generators/lisp-rpc-rust-generator/templates/ \
-          --output-path .
-#+end_src
-
-#+RESULTS:
-
-or without using the template folder, use the embedding templates
+After build the ~lisp-rpc-rust-generator~
 
 #+begin_src shell
-  ../../../target/debug/lisp-rpc-rust-generator \
-          --input-file spec.lisprpc\
-          --output-path ~/Desktop/
+  lisp-rpc-rust-generator \
+      --input-file spec.lisprpc \
+      --output-path ~/Desktop/
 #+end_src
-
-#+RESULTS:

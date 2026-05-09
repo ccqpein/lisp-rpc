@@ -1,24 +1,34 @@
 * README
 
-The generater for generating the rust code with the lisp-rpc protocol files
+The generator for generating Rust code from Lisp-RPC protocol files.
 
-** Files structs
+** Project Structure
 
 *** templates
 
-templates that used to generate the code.
+Templates used for code generation.
 
 *** src
 
-major code that read the templates and spec and generate the code
+Core logic that reads templates and specifications to generate code.
 
 ** Usage
 
-After the build
+After building:
 
 #+begin_src shell
   lisp-rpc-rust-generator \
-          --input-file spec.lisprpc\
+          --input-file spec.lisprpc \
           --templates-path ./templates/ \
           --output-path .
 #+end_src
+
+In most cases, you don't need to provide the templates folder, as the generator can use its embedded templates:
+
+#+begin_src shell
+  lisp-rpc-rust-generator \
+          --input-file spec.lisprpc \
+          --output-path .
+#+end_src
+
+Check the [[file:../../examples/rust/spec-mode-generate-lib/][example]] for more details.
