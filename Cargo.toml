@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
   "parsers/lisp-rpc-rust-parser",
   "generators/lisp-rpc-rust-generator",
@@ -10,6 +10,19 @@ members = [
   "examples/rust/serialize-struct-to-lisprpc",
 ]
 
+[profile.dev]
+opt-level = 0
+codegen-units = 256
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
 
 [workspace.dependencies]
 lisp-rpc-rust-parser = { path = "parsers/lisp-rpc-rust-parser" }
