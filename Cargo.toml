@@ -5,6 +5,7 @@ members = [
   "generators/lisp-rpc-rust-generator",
   "generators/lisp-rpc-rust-generator-macro",
   "serial/serializer",
+  "server",
 
   "examples/rust/plain-mode-read-and-write-data",
   "examples/rust/serialize-struct-to-lisprpc",
@@ -29,3 +30,4 @@ lisp-rpc-rust-parser = { path = "parsers/lisp-rpc-rust-parser" }
 lisp-rpc-rust-generator = { path = "generators/lisp-rpc-rust-generator" }
 lisp-rpc-rust-generator-macro = { path = "generators/lisp-rpc-rust-generator-macro" }
 lisp-rpc-rust-serializer = { path = "serial/serializer" }
+lisp-rpc-rust-server = { path = "server" }
