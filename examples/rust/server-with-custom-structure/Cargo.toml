@@ -1,0 +1,13 @@
+[package]
+name = "server-with-custom-structure"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-web = "4"
+anyhow = "1"
+lisp-rpc-rust-serializer = { path = "../../../serial/serializer" }
+lisp-rpc-rust-server = { path = "../../../server" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+env_logger = "0"

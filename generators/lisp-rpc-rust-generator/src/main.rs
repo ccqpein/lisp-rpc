@@ -87,14 +87,6 @@ fn have_templates_path(
     )
     .with_context(|| "copy failed")?;
 
-    fs::copy(
-        templates_path.join("rpc_server.rs"),
-        output_path
-            .join(specs.get_target_pkg_name().context("no pkg name")?)
-            .join("src/lib.rs"),
-    )
-    .with_context(|| "copy failed")?;
-
     Ok(())
 }
 
@@ -128,20 +120,6 @@ fn no_templates_path(output_path: &PathBuf, specs: &SpecFile) -> Result<()> {
         }
 
         fs::write(target_path, lib_rs.data)?;
-    }
-
-    // Handle rpc_server.rs specifically
-    if let Some(rpc_server_rs) = Assets::get("rpc_server.rs") {
-        let target_path = output_path
-            .join(specs.get_target_pkg_name().context("no pkg name")?)
-            .join("src/rpc_server.rs");
-
-        // Ensure parent directory exists
-        if let Some(parent) = target_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        fs::write(target_path, rpc_server_rs.data)?;
     }
 
     Ok(())
