@@ -8,7 +8,7 @@ members = [
   "server",
 
   "examples/rust/plain-mode-read-and-write-data",
-  "examples/rust/serialize-struct-to-lisprpc",
+  "examples/rust/serialize-struct-to-lisprpc", "examples/rust/server-with-custom-structure",
 ]
 
 [profile.dev]
