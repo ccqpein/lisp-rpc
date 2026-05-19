@@ -19,6 +19,14 @@ impl<'de> LispRPCDeserializer<'de> {
     fn peek_char(&self) -> Option<char> {
         self.input.chars().next()
     }
+
+    fn normalize_variant(&self, ident: &str) -> String {
+        if !ident.contains('-') && ident.chars().nth(0).unwrap_or('a').is_uppercase() {
+            ident.to_string()
+        } else {
+            ident.to_case(Case::Pascal)
+        }
+    }
 }
 
 impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
@@ -34,8 +42,17 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
             Some('\'') => {
                 if self.input.starts_with("'(:") {
                     self.deserialize_map(visitor)
-                } else {
+                } else if self.input.starts_with("'(") {
                     self.deserialize_seq(visitor)
+                } else {
+                    self.input = &self.input[1..];
+                    let end = self
+                        .input
+                        .find(|c: char| c.is_whitespace() || c == ')')
+                        .unwrap_or(self.input.len());
+                    let ident = &self.input[..end];
+                    self.input = &self.input[end..];
+                    visitor.visit_string(self.normalize_variant(ident))
                 }
             }
             Some('(') => self.deserialize_struct("", &[], visitor),
@@ -343,12 +360,20 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         self,
         _name: &'static str,
         _variants: &'static [&'static str],
-        _visitor: V,
+        visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        Err(LispRPCSerializerError::NotSupport)
+        self.eat_whitespace();
+        if self.input.starts_with('\'') {
+            self.input = &self.input[1..];
+            visitor.visit_enum(LispRPCVariantAccess { de: self })
+        } else {
+            Err(LispRPCSerializerError::Msg(
+                "expected ' for enum".to_string(),
+            ))
+        }
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -436,5 +461,85 @@ impl<'de, 'a> MapAccess<'de> for LispRPCMapAccess<'a, 'de> {
         V: DeserializeSeed<'de>,
     {
         seed.deserialize(&mut *self.de)
+    }
+}
+
+struct LispRPCVariantAccess<'a, 'de: 'a> {
+    de: &'a mut LispRPCDeserializer<'de>,
+}
+
+impl<'de, 'a> de::EnumAccess<'de> for LispRPCVariantAccess<'a, 'de> {
+    type Error = LispRPCSerializerError;
+    type Variant = Self;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
+    where
+        V: de::DeserializeSeed<'de>,
+    {
+        let val = seed.deserialize(LispRPCVariantDeserializer { de: self.de })?;
+        Ok((val, self))
+    }
+}
+
+impl<'de, 'a> de::VariantAccess<'de> for LispRPCVariantAccess<'a, 'de> {
+    type Error = LispRPCSerializerError;
+
+    fn unit_variant(self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
+    where
+        T: de::DeserializeSeed<'de>,
+    {
+        seed.deserialize(self.de)
+    }
+
+    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        Err(LispRPCSerializerError::NotSupport)
+    }
+
+    fn struct_variant<V>(
+        self,
+        _fields: &'static [&'static str],
+        _visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        Err(LispRPCSerializerError::NotSupport)
+    }
+}
+
+struct LispRPCVariantDeserializer<'a, 'de: 'a> {
+    de: &'a mut LispRPCDeserializer<'de>,
+}
+
+impl<'de, 'a> de::Deserializer<'de> for LispRPCVariantDeserializer<'a, 'de> {
+    type Error = LispRPCSerializerError;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        self.de.eat_whitespace();
+        let end = self
+            .de
+            .input
+            .find(|c: char| c.is_whitespace() || c == ')')
+            .unwrap_or(self.de.input.len());
+        let ident = &self.de.input[..end];
+        self.de.input = &self.de.input[end..];
+
+        visitor.visit_string(self.de.normalize_variant(ident))
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct enum identifier ignored_any option
     }
 }
