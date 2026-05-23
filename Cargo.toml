@@ -4,11 +4,12 @@ members = [
   "parsers/lisp-rpc-rust-parser",
   "generators/lisp-rpc-rust-generator",
   "generators/lisp-rpc-rust-generator-macro",
-  "serial/serializer",
+  "serializer",
   "server",
 
   "examples/rust/plain-mode-read-and-write-data",
-  "examples/rust/serialize-struct-to-lisprpc", "examples/rust/server-with-custom-structure",
+  "examples/rust/serialize-struct-to-lisprpc",
+  "examples/rust/server-with-custom-structure",
 ]
 
 [profile.dev]
@@ -26,8 +27,8 @@ codegen-units = 1
 panic = "abort"
 
 [workspace.dependencies]
-lisp-rpc-rust-parser = { path = "parsers/lisp-rpc-rust-parser" }
-lisp-rpc-rust-generator = { path = "generators/lisp-rpc-rust-generator" }
-lisp-rpc-rust-generator-macro = { path = "generators/lisp-rpc-rust-generator-macro" }
-lisp-rpc-rust-serializer = { path = "serial/serializer" }
-lisp-rpc-rust-server = { path = "server" }
+lisp-rpc-rust-parser = { version = "0.1.0", path = "parsers/lisp-rpc-rust-parser" }
+lisp-rpc-rust-generator = { version = "0.1.0", path = "generators/lisp-rpc-rust-generator" }
+lisp-rpc-rust-generator-macro = { version = "0.1.0", path = "generators/lisp-rpc-rust-generator-macro" }
+lisp-rpc-rust-serializer = { version = "0.1.0", path = "serializer" }
+lisp-rpc-rust-server = { version = "0.1.0", path = "server" }

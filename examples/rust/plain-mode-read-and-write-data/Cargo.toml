@@ -2,6 +2,7 @@
 name = "plain-mode-read-and-write-data"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [dependencies]
-lisp-rpc-rust-parser = { version = "0", path = "../../../parsers/lisp-rpc-rust-parser" }
+lisp-rpc-rust-parser = { workspace = true }
