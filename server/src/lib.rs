@@ -1,4 +1,4 @@
-use lisp_rpc_rust_serializer::lisp_rpc_to_str;
+pub use lisp_rpc_rust_serializer::lisp_rpc_to_str;
 
 pub mod server;
 pub use server::*;

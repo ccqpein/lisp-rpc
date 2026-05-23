@@ -1,8 +1,23 @@
 #+TITLE: Lisp-RPC
 
-Lisp-RPC is a lightweight, S-expression based Remote Procedure Call protocol designed for simplicity and flexibility. It supports two primary modes of operation to balance dynamic communication with type safety and performance.
+Lisp-RPC is a lightweight, S-expression-based Remote Procedure Call protocol designed for simplicity and flexibility. It supports two primary modes of operation to balance dynamic communication with type safety and performance.
 
 * Overview
+
+Similar to JSON-RPC, Lisp-RPC defines data structures using Lisp S-expression syntax.
+
+Key advantages:
+
+- *Formal API contract (like gRPC)*: APIs can be formally defined using schema files (Spec Mode) to generate typed client/server code.
+- *Human-readable (like JSON)*: Messages are written in plain text, making them fully readable and easy to inspect.
+
+Key disadvantages avoided:
+
+- *No verbose nesting (unlike JSON)*: Lisp-RPC natively supports nested structures with clean S-expressions, avoiding JSON's verbose braces and brackets.
+- *No protocol boilerplate (unlike JSON-RPC)*: It does not mandate boilerplate fields like ~id~ or ~result~ at the protocol level.
+- *No custom IDL language (unlike gRPC)*: It does not require learning a custom syntax (such as ~.proto~); schemas are defined using Lisp's native S-expression format.
+
+** Two Modes
 
 - *Plain Mode*: For direct, dynamic communication using raw S-expressions.
 - *Spec Mode*: For schema-defined, type-checked communication with automatic code generation.
@@ -16,31 +31,35 @@ Lisp-RPC supports standard Lisp-like data structures:
   - *List*: Quoted sequences: ='(1 2 3)=.
   - *Map*: Anonymous keyword-value pairs: ='(:key value)=.
 
+* Lisp-RPC Spec
+
+Check the [[file:example-specs/Spec.org][Spec.org]] for more details.
+
 * Project Structure
 
 This repository is organized as a Rust workspace containing the core parser, serializer, and generators, along with examples and specifications.
 
-**  [[file:example-specs/][example-specs/]]
+** [[file:example-specs/][example-specs/]]
 
-Contains the spec details and some example specs
+Contains specification details and example schemas.
 
-**  [[file:examples/][examples/]]
+** [[file:examples/][examples/]]
 
 Practical examples demonstrating both Plain Mode and Spec Mode usage.
 
-**  [[file:generators/][generators/]]
+** [[file:generators/][generators/]]
 
 Implementation of code generators that transform =.lisprpc= specs into library code.
 
-**  [[file:parsers/][parsers/]]
+** [[file:parsers/][parsers/]]
 
-Core Lisp-RPC parsers (primarily Rust).
+Core Lisp-RPC parsers (primarily written in Rust).
 
-**  [[file:serial/][serial/]]
+** [[file:serializer][serializer/]]
 
 Core serialization and deserialization logic.
 
-**  [[file:utils/][utils/]]
+** [[file:utils/][utils/]]
 
 Helper scripts and Common Lisp utilities for protocol validation.
 
@@ -61,7 +80,7 @@ In Plain Mode, clients send raw S-expressions as strings. The server parses thes
 #+end_src
 
 ** Spec Mode
-Spec Mode uses a formal schema defined with =def-msg= and =def-rpc=. This enables generating typed libraries for various languages.
+Spec Mode uses a formal schema defined with =def-msg= and =def-rpc=. This enables generating typed libraries for various target languages.
 
 #+begin_src lisp
   (def-msg book-info :title 'string :id 'number)
@@ -74,20 +93,20 @@ Spec Mode uses a formal schema defined with =def-msg= and =def-rpc=. This enable
 
 Structures that derive ~Serialize~ and ~Deserialize~ can use ~lisp_rpc_from_str~ and ~lisp_rpc_to_str~ from ~lisp_rpc_rust_serializer~ to serialize and deserialize between the structure and the Lisp-RPC format string.
 
-Check this [[file:examples/rust/serialize-struct-to-lisprpc/][example]] for more details.
+Check [[file:examples/rust/serialize-struct-to-lisprpc/][this example]] for more details.
 
-** Handle the plain mode
+** Handling Plain Mode
 
 ~lisp_rpc_rust_parser::data::Data~ can parse a string directly into a ~Data~ object, which can then be accessed using ~.get(keyname)~.
 
-Check this [[file:examples/rust/plain-mode-read-and-write-data/][example]] for more details.
+Check [[file:examples/rust/plain-mode-read-and-write-data/][this example]] for more details.
 
-** Spec & generate mode
+** Spec & Code Generation Mode
 
-[[file:examples/rust/spec-mode-generate-lib/][spec-mode-generate-lib]] shows how to generate the Lisp-RPC library code with the generator.
+[[file:examples/rust/spec-mode-generate-lib/][spec-mode-generate-lib]] shows how to generate the Lisp-RPC library code using the generator.
 
-** Using the server with custom structures
+** Using the Server with Custom Structures
 
-Migrate the custom structures that were created before. If the structures derive ~Serialize~ and ~Deserialize~, you need to implement ~RPCType~ with the ~impl_to_rpc!~ macro from the [[file:server/][server lib]].
+Integrating custom structures is straightforward. If the structures derive ~Serialize~ and ~Deserialize~, you need to implement ~RPCType~ with the ~impl_to_rpc!~ macro from the [[file:server/][server lib]].
 
-Check this [[file:examples/rust/server-with-custom-structure/][example]] for more details.
+Check [[file:examples/rust/server-with-custom-structure/][this example]] for more details.
