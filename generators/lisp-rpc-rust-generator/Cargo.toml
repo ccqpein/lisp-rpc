@@ -2,6 +2,10 @@
 name = "lisp-rpc-rust-generator"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Code generator that transforms .lisprpc spec files into typed Rust client/server code for Lisp-RPC."
 
 [dependencies]
 reqwest = { version = "0", features = ["blocking"] }
