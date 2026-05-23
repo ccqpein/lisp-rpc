@@ -3,14 +3,20 @@ resolver = "3"
 members = [
   "parsers/lisp-rpc-rust-parser",
   "generators/lisp-rpc-rust-generator",
-  "generators/lisp-rpc-rust-generator-macro",
   "serializer",
   "server",
+
+  "generators/lisp-rpc-rust-generator-macro", # deprecated
 
   "examples/rust/plain-mode-read-and-write-data",
   "examples/rust/serialize-struct-to-lisprpc",
   "examples/rust/server-with-custom-structure",
 ]
+
+[workspace.package]
+license = "MIT"
+repository = "https://github.com/ccqpein/lisp-rpc"
+homepage = "https://github.com/ccqpein/lisp-rpc"
 
 [profile.dev]
 opt-level = 0
@@ -29,6 +35,8 @@ panic = "abort"
 [workspace.dependencies]
 lisp-rpc-rust-parser = { version = "0.1.0", path = "parsers/lisp-rpc-rust-parser" }
 lisp-rpc-rust-generator = { version = "0.1.0", path = "generators/lisp-rpc-rust-generator" }
-lisp-rpc-rust-generator-macro = { version = "0.1.0", path = "generators/lisp-rpc-rust-generator-macro" }
 lisp-rpc-rust-serializer = { version = "0.1.0", path = "serializer" }
 lisp-rpc-rust-server = { version = "0.1.0", path = "server" }
+
+# deprecated
+lisp-rpc-rust-generator-macro = { version = "0.1.0", path = "generators/lisp-rpc-rust-generator-macro" }

@@ -2,6 +2,10 @@
 name = "lisp-rpc-rust-serializer"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Serialization and deserialization logic for Lisp-RPC, a lightweight, S-expression-based Remote Procedure Call protocol."
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
