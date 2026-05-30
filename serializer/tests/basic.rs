@@ -128,3 +128,22 @@ fn test_deserial_from_kebab_case_partial() {
         },
     );
 }
+
+#[test]
+fn test_pathbuf_deserialization() {
+    let serialized = r#""/usr/bin/cargo""#;
+    let path: std::path::PathBuf = lisp_rpc_from_str(serialized).unwrap();
+    assert_eq!(path, std::path::PathBuf::from("/usr/bin/cargo"));
+}
+
+#[test]
+fn test_unit_serialization() {
+    let u = ();
+    let serialized = lisp_rpc_to_str(u).unwrap();
+    assert_eq!(serialized, "nil");
+
+    let deserialized: () = lisp_rpc_from_str(&serialized).unwrap();
+    assert_eq!(deserialized, ());
+}
+
+

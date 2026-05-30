@@ -231,11 +231,17 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         Err(LispRPCSerializerError::NotSupport)
     }
 
-    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        Err(LispRPCSerializerError::NotSupport)
+        self.eat_whitespace();
+        if self.input.starts_with("nil") {
+            self.input = &self.input[3..];
+            visitor.visit_unit()
+        } else {
+            Err(LispRPCSerializerError::Msg("expected nil".to_string()))
+        }
     }
 
     fn deserialize_unit_struct<V>(

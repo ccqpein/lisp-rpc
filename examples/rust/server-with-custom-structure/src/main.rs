@@ -14,7 +14,8 @@ struct SomeData {
 
 // impl RPCType with impl_to_rpc! from lisp_rpc_rust_server and lisp_rpc_rust_serializer
 
-impl_to_rpc!(SomeData, RPCType::Msg("some-data".to_string()));
+// the handler function arguments **has to be** RPCType::RPC
+impl_to_rpc!(SomeData, RPCType::RPC("some-data".to_string()));
 
 // if some type is map type, need to call register_global_map_type
 // pub fn init() {
