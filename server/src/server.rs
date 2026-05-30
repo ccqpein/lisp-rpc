@@ -72,7 +72,7 @@ impl RPCServer {
         // has to be RPCType::RPC
         let command = match <T as ToRPCType>::to_rpc_type() {
             RPCType::RPC(s) => s,
-            _ => anyhow::bail!("handler function argument has to be RPCType::RPC"),
+            _ => anyhow::bail!("Handler function argument has to be RPCType::RPC"),
         };
 
         let handler = Handler {

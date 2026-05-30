@@ -339,7 +339,7 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Err(LispRPCSerializerError::NotSupport)
+        self.write_bytes(b"nil")
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
