@@ -146,4 +146,9 @@ fn test_unit_serialization() {
     assert_eq!(deserialized, ());
 }
 
-
+#[test]
+fn test_string_serialization() {
+    let a = "string".to_string();
+    let serialized = lisp_rpc_to_str(a).unwrap();
+    assert_eq!(serialized, r#""string""#);
+}

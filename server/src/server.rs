@@ -75,7 +75,10 @@ where
 
 /// The type-erased async handler trait
 pub trait AsyncRpcHandler: Send + Sync {
-    fn handle(&self, raw_data: &str) -> Pin<Box<dyn Future<Output = Result<Box<dyn ToRPCType>>> + Send>>;
+    fn handle(
+        &self,
+        raw_data: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn ToRPCType>>> + Send>>;
 }
 
 /// A concrete async handler that knows its own request type T
@@ -89,7 +92,10 @@ where
     T: DeserializeOwned + Debug + Send + Sync + ToRPCType + 'static,
     F: AsyncRpcFunc<T>,
 {
-    fn handle(&self, raw_data: &str) -> Pin<Box<dyn Future<Output = Result<Box<dyn ToRPCType>>> + Send>> {
+    fn handle(
+        &self,
+        raw_data: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn ToRPCType>>> + Send>> {
         let req_res =
             lisp_rpc_from_str(raw_data).map_err(|e| anyhow!("Deserialization failed: {}", e));
         match req_res {
@@ -193,7 +199,7 @@ impl RPCServer {
         let command =
             extract_command_name(raw_data).ok_or_else(|| anyhow!("Invalid RPC format"))?;
 
-        // 2. Find the registered handler (check sync first)
+        // 2. Caution: Find the registered handler (check sync first)
         if let Some(handler) = self.handlers.get(&command) {
             let resp_obj = handler.handle(raw_data)?;
             return resp_obj.serialize_lisp();
@@ -257,12 +263,18 @@ mod tests {
             .unwrap();
 
         // 1. Test sync handler via sync dispatch
-        let sync_req = lisp_rpc_rust_serializer::lisp_rpc_to_str(&DummyReq { val: "test".to_string() }).unwrap();
+        let sync_req = lisp_rpc_rust_serializer::lisp_rpc_to_str(&DummyReq {
+            val: "test".to_string(),
+        })
+        .unwrap();
         let sync_res = server.handle(&sync_req).unwrap();
         assert!(sync_res.contains("sync-test"));
 
         // 2. Test async handler via handle_async
-        let async_req = lisp_rpc_rust_serializer::lisp_rpc_to_str(&DummyAsyncReq { val: "async-test".to_string() }).unwrap();
+        let async_req = lisp_rpc_rust_serializer::lisp_rpc_to_str(&DummyAsyncReq {
+            val: "async-test".to_string(),
+        })
+        .unwrap();
         let async_res = server.handle_async(&async_req).await.unwrap();
         assert!(async_res.contains("async-async-test"));
     }
