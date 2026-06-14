@@ -1,4 +1,5 @@
 #+TITLE: Lisp-RPC Specification
+#+Author: ccQpein
 
 * Introduction
 Lisp-RPC is a lightweight, S-expression based Remote Procedure Call protocol. It supports two modes: *Plain Mode* for direct, dynamic communication and *Spec Mode* for schema-defined, type-checked communication.
