@@ -1,0 +1,42 @@
+#+Title: Lisp Implement
+
+Because the ~lisp-rpc~ data or specs are all illegal common lisp syntex/grammar. So in this directory, contained Lisp implement, is different than other languages
+
+Since all ~data~ format can treat as the ~(func :key1 value :key2 value)~, so the ~data~ and the expr boundrey isnt that clear. 
+
+I recommand define the funcion like
+
+*NEED EXAMPLE*
+
+#+begin_src lisp
+(defun data-name (&keys param1 param2) 
+;; body here
+)
+#+end_src
+
+Then you can just
+
+#+begin_src lisp
+(eval (read "(data-name :param1 value1 :param2 value2)"))
+#+end_src
+
+However, if you want to deal it like other languages. Check below.
+
+* Plain Mode
+
+get the key value directly
+
+* Spec Mode
+
+def the data 
+def the rpc
+
+* others
+
+How to test this package
+
+#+begin_src lisp
+  (load "./lisp-rpc.asd")
+  (ql:quickload "lisp-rpc")
+  (asdf:test-system :lisp-rpc)
+#+end_src
