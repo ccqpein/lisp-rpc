@@ -20,8 +20,8 @@
 (in-suite test-raw-data)
 
 (test type-of-raw-data-test
-  (is (eq :string (type-of-raw-data "a")))
-  (is (eq :number (type-of-raw-data 1)))
+  (is (eq :raw (type-of-raw-data "a")))
+  (is (eq :raw (type-of-raw-data 1)))
   (is (eq :data (type-of-raw-data '(a :a 1 :b 2))))
   (is (eq :list (type-of-raw-data '(1 2 3 4))))
   (is (eq :map (type-of-raw-data '(:g 2 :3 4)))))
@@ -33,8 +33,8 @@
     (is (eq 'update-user (get-name parsed)))
     (is (= 1 (data-get parsed :id)))
     (is (raw-data-map-p profile-map))
-    (is (equal '(:email "a@b.com" :tags '("admin" "staff")) (raw-data-map-kv profile-map)))
-    (is (equal "a@b.com" (map-data-get profile-map :email)))))
+    (is (equalp (list :email "a@b.com" :tags (make-raw-data-list :L '("admin" "staff"))) (raw-data-map-kv profile-map)))
+    (is (equal "a@b.com" (data-get profile-map :email)))))
 
 (test parse-list-and-map-test
   (let ((parsed-list (parse-raw-data '(1 2 3))))
@@ -53,3 +53,17 @@
     (is (raw-data-p result))
     (is (eq 'inner-data (get-name result)))
     (is (= 123 (data-get result :val)))))
+
+(test to-string-test
+  (is (equal "123" (to-string 123)))
+  (is (equal "\"hello\"" (to-string "hello")))
+  (is (equal ":KEY" (to-string :key)))
+  
+  (is (equal ":A 1 :B \"two\"" (to-string (parse-raw-data '(:a 1 :b "two")))))
+  
+  (is (equal "(UPDATE-USER :ID 1 :NAME \"foo\")" 
+             (to-string (parse-data "(update-user :id 1 :name \"foo\")"))))
+
+  (is (equal "(RESPONSE-NAME :RESULT (INNER-DATA :VAL 123) :STATUS \"success\")"
+             (to-string (parse-data "(response-name :result (inner-data :val 123) :status \"success\")")))))
+

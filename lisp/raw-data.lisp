@@ -7,13 +7,14 @@
            #:raw-data-name
            #:raw-data-kv
            #:get-name
-           #:data-get
 
            #:raw-data-map
            #:make-raw-data-map
            #:raw-data-map-p
            #:raw-data-map-kv
-           #:map-data-get
+
+           #:data-get
+           #:to-string
 
            #:raw-data-list
            #:make-raw-data-list
@@ -42,18 +43,27 @@
   (raw-data-name d))
 
 (defmethod data-get ((d raw-data) key &key &allow-other-keys)
-  (map-data-get (raw-data-kv d) key))
+  (data-get (raw-data-kv d) key))
+
+(defmethod to-string ((d raw-data) &key &allow-other-keys)
+  (format nil "(~a ~a)" (get-name d) (to-string (raw-data-kv d))))
 
 (defstruct raw-data-map
   "Raw map"
   kv)
 
-(defmethod map-data-get ((d raw-data-map) key &key &allow-other-keys)
+(defmethod data-get ((d raw-data-map) key &key &allow-other-keys)
   (getf (raw-data-map-kv d) key))
+
+(defmethod to-string ((d raw-data-map) &key &allow-other-keys)
+  (format nil "~{~a~^ ~}" (mapcar #'to-string (raw-data-map-kv d))))
 
 (defstruct raw-data-list
   "Raw list"
   l)
+
+(defmethod to-string (d &key &allow-other-keys)
+  (format nil "~S" d))
 
 (defun type-of-raw-data (raw-data)
   (cond ((consp raw-data)
@@ -68,10 +78,8 @@
                      (keywordp (second raw-data)))
                 :data)
                (t :list)))
-        ((stringp raw-data)
-         :string)
-        ((numberp raw-data)
-         :number)))
+        (t :raw)
+        ))
 
 (defun parse-data (data)
   "entry of the raw string"
@@ -81,10 +89,10 @@
 (defun parse-raw-data (raw-data)
   "parse the lisp-rpc data"
   (case (type-of-raw-data raw-data)
-    ((:number :string) raw-data)
+    (:raw raw-data)
     (:map (parse-raw-map-data raw-data))
     (:list (parse-raw-list-data raw-data))
-    (t
+    (:data
      ;; data below
      (do ((this-ty 'symbol)
           (kv-cache)
@@ -106,11 +114,13 @@
   (let ((mm (if (eq 'quote (first raw-map-data))
                 (eval raw-map-data) ;; unquoted since in lisp-rpc, the map has to been quote
                 raw-map-data)))
-    (make-raw-data-map :kv mm)))
+    (make-raw-data-map
+     :kv (loop for (k v) on mm :by #'cddr
+               append (list k (parse-raw-data v))))))
 
 (defun parse-raw-list-data (raw-list-data)
-  (let ((mm (if (eq 'quote (first raw-list-data))
+  (let ((ll (if (eq 'quote (first raw-list-data))
                 (eval raw-list-data) ;; unquoted
                 raw-list-data)))
-    (make-raw-data-list :l mm)))
-
+    (make-raw-data-list
+     :l (mapcar #'parse-raw-data ll))))
