@@ -1,0 +1,13 @@
+[package]
+name = "server-with-tcp"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1"
+lisp-rpc-rust-serializer = { workspace = true }
+lisp-rpc-rust-server = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+env_logger = "0"
