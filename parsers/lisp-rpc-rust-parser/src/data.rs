@@ -83,7 +83,7 @@ pub enum Data {
 }
 
 impl Data {
-    fn from_expr(e: &Expr) -> Result<Self, Box<dyn Error>> {
+    pub fn from_expr(e: &Expr) -> Result<Self, Box<dyn Error>> {
         match e {
             Expr::List(_) => Ok(Self::Data(ExprData::from_expr(e)?)),
             Expr::Quote(expr) => {
@@ -622,6 +622,31 @@ mod tests {
         let s = r#"(rpc-call :version 1 :aa 2)"#;
         let d = ExprData::from_str(&Default::default(), s);
         assert!(d.is_ok())
+    }
+
+    #[test]
+    fn test_gen_data_from_multiple_exprs() {
+        let mut parser = Parser::new();
+
+        let exprs = parser
+            .parse_root(&mut Cursor::new(
+                "(a :b \"c\" :c 123) (a :a '(1 2 3))".as_bytes(),
+            ))
+            .unwrap();
+
+        //dbg!(&exprs);
+
+        let data = Data::from_expr(&exprs[0]);
+        assert_eq!(
+            data.unwrap(),
+            Data::from_str(&Default::default(), "(a :b \"c\" :c 123)").unwrap()
+        );
+
+        let data = Data::from_expr(&exprs[1]);
+        assert_eq!(
+            data.unwrap(),
+            Data::from_str(&Default::default(), "(a :a '(1 2 3))").unwrap()
+        );
     }
 
     #[test]
