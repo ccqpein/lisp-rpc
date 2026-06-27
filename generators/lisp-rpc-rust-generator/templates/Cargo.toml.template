@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 actix-web = "4"
 anyhow = "1"
-lisp-rpc-rust-serializer = { git = "https://github.com/ccQpein/lisp-rpc" }
-lisp-rpc-rust-server = { git = "https://github.com/ccQpein/lisp-rpc" }
+lisp-rpc-rust-serializer = "0"
+lisp-rpc-rust-server = "0"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 env_logger = "0"
