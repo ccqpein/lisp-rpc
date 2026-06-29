@@ -148,7 +148,7 @@ impl DefMsg {
                         kebab_to_snake_case(f),
                         type_translate(t),
                         None,
-                    ));
+                    )?);
                 }
                 (
                     Expr::Atom(Atom {
@@ -176,7 +176,7 @@ impl DefMsg {
                                 kebab_to_snake_case(f),
                                 type_translate(&new_msg_name),
                                 None,
-                            ));
+                            )?);
                         }
                         // list type, the first ele is "list"
                         (
@@ -192,7 +192,7 @@ impl DefMsg {
                                 kebab_to_snake_case(f),
                                 new_type_name,
                                 None,
-                            ));
+                            )?);
                         }
                         _ => {
                             anyhow::bail!(DefMsgError {
@@ -275,7 +275,7 @@ mod tests {
     use lisp_rpc_rust_parser::Expr;
 
     #[test]
-    fn test_parse_def_msg() {
+    fn test_parse_def_msg() -> Result<()> {
         let case = r#"(def-msg language-perfer :lang 'string)"#;
         let dm = DefMsg::from_str(case, Default::default()).unwrap();
 
@@ -324,10 +324,12 @@ mod tests {
                 msg_ty: RPCDataType::Msg,
             }
         );
+
+        Ok(())
     }
 
     #[test]
-    fn test_create_gen_structs() {
+    fn test_create_gen_structs() -> Result<()> {
         let spec = r#"(def-msg book-info
     :lang 'language-perfer
     :title 'string
@@ -340,10 +342,10 @@ mod tests {
             vec![GeneratedStruct::new(
                 "book-info",
                 vec![
-                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None),
-                    GeneratedField::new("title".to_string(), "String".to_string(), None),
-                    GeneratedField::new("version".to_string(), "String".to_string(), None),
-                    GeneratedField::new("id".to_string(), "String".to_string(), None),
+                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None)?,
+                    GeneratedField::new("title".to_string(), "String".to_string(), None)?,
+                    GeneratedField::new("version".to_string(), "String".to_string(), None)?,
+                    GeneratedField::new("id".to_string(), "String".to_string(), None)?,
                 ],
                 None,
                 RPCDataType::Msg,
@@ -365,8 +367,8 @@ mod tests {
                 GeneratedStruct::new(
                     "book-info-lang",
                     vec![
-                        GeneratedField::new("a".to_string(), "String".to_string(), None),
-                        GeneratedField::new("b".to_string(), "i64".to_string(), None),
+                        GeneratedField::new("a".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("b".to_string(), "i64".to_string(), None)?,
                     ],
                     None,
                     RPCDataType::Map,
@@ -374,10 +376,10 @@ mod tests {
                 GeneratedStruct::new(
                     "book-info",
                     vec![
-                        GeneratedField::new("lang".to_string(), "BookInfoLang".to_string(), None),
-                        GeneratedField::new("title".to_string(), "String".to_string(), None),
-                        GeneratedField::new("version".to_string(), "String".to_string(), None),
-                        GeneratedField::new("id".to_string(), "String".to_string(), None),
+                        GeneratedField::new("lang".to_string(), "BookInfoLang".to_string(), None)?,
+                        GeneratedField::new("title".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("version".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("id".to_string(), "String".to_string(), None)?,
                     ],
                     None,
                     RPCDataType::Msg,
@@ -400,8 +402,8 @@ mod tests {
                 GeneratedStruct::new(
                     "book-info-lang",
                     vec![
-                        GeneratedField::new("a".to_string(), "String".to_string(), None),
-                        GeneratedField::new("b".to_string(), "i64".to_string(), None),
+                        GeneratedField::new("a".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("b".to_string(), "i64".to_string(), None)?,
                     ],
                     None,
                     RPCDataType::Map,
@@ -409,10 +411,10 @@ mod tests {
                 GeneratedStruct::new(
                     "book-info",
                     vec![
-                        GeneratedField::new("lang".to_string(), "BookInfoLang".to_string(), None),
-                        GeneratedField::new("title".to_string(), "String".to_string(), None),
-                        GeneratedField::new("version".to_string(), "String".to_string(), None),
-                        GeneratedField::new("id".to_string(), "String".to_string(), None),
+                        GeneratedField::new("lang".to_string(), "BookInfoLang".to_string(), None)?,
+                        GeneratedField::new("title".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("version".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("id".to_string(), "String".to_string(), None)?,
                     ],
                     None,
                     RPCDataType::Msg,
@@ -433,8 +435,8 @@ mod tests {
             vec![GeneratedStruct::new(
                 "book-info",
                 vec![
-                    GeneratedField::new("langs".to_string(), "Vec<String>".to_string(), None),
-                    GeneratedField::new("version".to_string(), "String".to_string(), None),
+                    GeneratedField::new("langs".to_string(), "Vec<String>".to_string(), None)?,
+                    GeneratedField::new("version".to_string(), "String".to_string(), None)?,
                 ],
                 None,
                 RPCDataType::Msg,
@@ -452,15 +454,17 @@ mod tests {
                     "names_a".to_string(),
                     "Vec<String>".to_string(),
                     None
-                ),],
+                )?,],
                 None,
                 RPCDataType::Msg,
             ),],
         );
+
+        Ok(())
     }
 
     #[test]
-    fn test_gen_code() {
+    fn test_gen_code() -> Result<()> {
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let template_file_path = vec![
             project_root.join("templates/def_struct.rs.template"),
@@ -474,7 +478,7 @@ mod tests {
             dm.gen_code_with_files(&template_file_path).unwrap(),
             r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Authors {
-    names: Vec<String>,
+    pub names: Vec<String>,
 }
 
 impl_to_rpc!(Authors, RPCType::Msg("authors".to_string()));"#
@@ -488,7 +492,7 @@ impl_to_rpc!(Authors, RPCType::Msg("authors".to_string()));"#
             dm.gen_code_with_files(&template_file_path).unwrap(),
             r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LanguagePerfer {
-    lang: String,
+    pub lang: String,
 }
 
 impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
@@ -501,8 +505,8 @@ impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
             dm.gen_code_with_files(&template_file_path).unwrap(),
             r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LanguagePerfer {
-    lang: String,
-    version: i64,
+    pub lang: String,
+    pub version: i64,
 }
 
 impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
@@ -521,21 +525,23 @@ impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
             dm.gen_code_with_files(&template_file_path).unwrap(),
             r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BookInfoLang {
-    a: String,
-    b: i64,
+    pub a: String,
+    pub b: i64,
 }
 
 impl_to_rpc!(BookInfoLang, RPCType::Map);
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BookInfo {
-    lang: BookInfoLang,
-    title: String,
-    version: String,
-    id: String,
+    pub lang: BookInfoLang,
+    pub title: String,
+    pub version: String,
+    pub id: String,
 }
 
 impl_to_rpc!(BookInfo, RPCType::Msg("book-info".to_string()));"#
         );
+
+        Ok(())
     }
 }

@@ -18,12 +18,18 @@ pub struct GeneratedField {
 }
 
 impl GeneratedField {
-    pub fn new(name: String, field_type: String, comment: Option<String>) -> Self {
-        Self {
+    pub fn new(name: String, field_type: String, comment: Option<String>) -> Result<Self> {
+        const RESERVED_WORDS: &[&str] = &["type"];
+
+        if RESERVED_WORDS.contains(&name.as_str()) {
+            anyhow::bail!("Field name {} is reserved words", &name)
+        }
+
+        Ok(Self {
             name: name,
             field_type: field_type,
             comment,
-        }
+        })
     }
 }
 
@@ -130,6 +136,12 @@ mod tests {
     use tera::{Context, Tera};
 
     #[test]
+    fn test_generate_field_reserved_words() -> Result<()> {
+        assert!(GeneratedField::new("type".to_string(), "String".to_string(), None).is_err());
+        Ok(())
+    }
+
+    #[test]
     fn test_generate_struct() {
         let temp = include_str!("../templates/def_struct.rs.template");
         let mut tera = Tera::default();
@@ -141,8 +153,8 @@ mod tests {
         let s = GeneratedStruct {
             name: "name".to_string(),
             fields: vec![
-                GeneratedField::new("a".to_string(), "String".to_string(), None),
-                GeneratedField::new("a".to_string(), "i64".to_string(), None),
+                GeneratedField::new("a".to_string(), "String".to_string(), None).unwrap(),
+                GeneratedField::new("a".to_string(), "i64".to_string(), None).unwrap(),
             ],
             comment: None,
             data_name: "name".to_string(),
@@ -157,8 +169,8 @@ mod tests {
             tera.render("test", &context).unwrap(),
             r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct name {
-    a: String,
-    a: i64,
+    pub a: String,
+    pub a: i64,
 }"#
         );
 
@@ -195,8 +207,8 @@ pub struct name {
         let s = GeneratedStruct {
             name: "name".to_string(),
             fields: vec![
-                GeneratedField::new("a".to_string(), "String".to_string(), None),
-                GeneratedField::new("a".to_string(), "i64".to_string(), None),
+                GeneratedField::new("a".to_string(), "String".to_string(), None).unwrap(),
+                GeneratedField::new("a".to_string(), "i64".to_string(), None).unwrap(),
             ],
             comment: None,
             data_name: "name".to_string(),
