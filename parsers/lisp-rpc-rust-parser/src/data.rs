@@ -89,21 +89,24 @@ impl Data {
             Expr::Quote(expr) => {
                 // list or map
                 match expr.as_ref() {
-                    Expr::List(exprs) => match &exprs[0] {
-                        // Map data
-                        Expr::Atom(Atom {
-                            value: crate::TypeValue::Keyword(_),
-                            ..
-                        }) => Ok(Self::Map(MapData::from_expr(e)?)),
+                    Expr::List(_) => {
+                        let exprs = expr.filter_out_all_comments()?.collect::<Vec<_>>();
+                        match &exprs[0] {
+                            // Map data
+                            Expr::Atom(Atom {
+                                value: crate::TypeValue::Keyword(_),
+                                ..
+                            }) => Ok(Self::Map(MapData::from_expr(e)?)),
 
-                        // List data
-                        Expr::Atom(Atom { .. }) => Ok(Self::List(ListData::from_expr(e)?)),
+                            // List data
+                            Expr::Atom(Atom { .. }) => Ok(Self::List(ListData::from_expr(e)?)),
 
-                        _ => Err(Box::new(DataError {
-                            msg: format!("cannot generate Data from the expr {:?}", e),
-                            err_type: DataErrorType::InvalidInput,
-                        })),
-                    },
+                            _ => Err(Box::new(DataError {
+                                msg: format!("cannot generate Data from the expr {:?}", e),
+                                err_type: DataErrorType::InvalidInput,
+                            })),
+                        }
+                    }
                     Expr::Atom(Atom { value }) => Ok(Self::Value(value.clone())),
                     _ => Err(Box::new(DataError {
                         msg: format!("cannot generate Data from the expr {:?}", e),
@@ -121,6 +124,12 @@ impl Data {
                 }
                 vv @ _ => Ok(Self::Value(vv.clone())),
             },
+
+            // cannot handle comment so far, so dont call this function with the comment expr
+            Expr::Comment(_) => Err(Box::new(DataError {
+                msg: format!("cannot generate Data from the comment"),
+                err_type: DataErrorType::InvalidInput,
+            })),
         }
     }
 
@@ -216,15 +225,7 @@ pub struct ExprData {
 
 impl ExprData {
     fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>> {
-        let exprs = match expr {
-            Expr::List(ee) => ee,
-            _ => {
-                return Err(Box::new(DataError {
-                    msg: "cannot generate ExprData from this expr".to_string(),
-                    err_type: DataErrorType::InvalidInput,
-                }));
-            }
-        };
+        let exprs = expr.filter_out_all_comments()?.collect::<Vec<_>>();
 
         if exprs.len() < 1 {
             return Err(Box::new(DataError {
@@ -253,7 +254,7 @@ impl ExprData {
         };
 
         let mut rest_a = vec![];
-        for [k, v] in exprs[1..].into_iter().array_chunks() {
+        for [&k, v] in exprs[1..].into_iter().array_chunks() {
             match (k, v) {
                 (
                     Expr::Atom(Atom {
@@ -621,7 +622,21 @@ mod tests {
 
         let s = r#"(rpc-call :version 1 :aa 2)"#;
         let d = ExprData::from_str(&Default::default(), s);
-        assert!(d.is_ok())
+        assert!(d.is_ok());
+
+        // comment check
+        let s = r#"(rpc-call :version 1 ;; comment
+                     :aa 2)"#;
+        let d = ExprData::from_str(&Default::default(), s);
+        assert!(d.is_ok());
+        assert_eq!(
+            d.unwrap().get("version"),
+            Some(&Data::Value(TypeValue::Number(1)))
+        );
+
+        let s = r#"(rpc-call :version 1 ;; :aa 2)"#;
+        let d = ExprData::from_str(&Default::default(), s);
+        assert!(d.is_err());
     }
 
     #[test]

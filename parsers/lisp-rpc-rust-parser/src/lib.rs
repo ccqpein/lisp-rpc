@@ -102,6 +102,9 @@ pub enum Expr {
     Atom(Atom),
     List(Vec<Expr>),
     Quote(Box<Expr>),
+
+    /// Comment
+    Comment(String),
 }
 
 impl Expr {
@@ -118,6 +121,7 @@ impl Expr {
                     + ")"
             }
             Expr::Quote(expr) => String::from("'") + &expr.into_tokens(),
+            Expr::Comment(s) => String::from("; ") + s,
         }
     }
 
@@ -132,6 +136,24 @@ impl Expr {
         match self {
             Expr::List(exprs) => Some(exprs.iter()),
             _ => None,
+        }
+    }
+
+    pub fn is_comment(&self) -> bool {
+        match self {
+            Expr::Comment(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Clean all comment expr from List. Unwrap List directly
+    pub fn filter_out_all_comments(&self) -> anyhow::Result<impl Iterator<Item = &Expr>> {
+        match self {
+            Expr::List(_) => match self.iter() {
+                Some(rest_expr) => Ok(rest_expr.filter(|e| !e.is_comment())),
+                None => Err(anyhow::anyhow!("Empty")),
+            },
+            _ => Err(anyhow::anyhow!("Not the Expr::List")),
         }
     }
 }
@@ -179,7 +201,7 @@ impl Parser {
                 Ok(n) if n != 0 => {
                     let c = buf.get(0).unwrap();
                     match c {
-                        b'(' | b' ' | b')' | b'\'' | b'"' | b':' | b'\n' => {
+                        b'(' | b' ' | b')' | b'\'' | b'"' | b':' | b'\n' | b';' => {
                             if !cache.is_empty() {
                                 res.push(String::from_utf8(cache.clone()).unwrap());
                                 cache.clear();
@@ -270,6 +292,7 @@ impl Parser {
             "'" => Ok(Self::read_quote),
             "\"" => Ok(Self::read_string),
             ":" => Ok(Self::read_keyword),
+            ";" => Ok(Self::read_comment),
             _ => Ok(Self::read_atom),
         }
     }
@@ -362,6 +385,43 @@ impl Parser {
             .ok_or(ParserError::InvalidToken("in read_keyword"))?;
 
         Ok(Expr::Atom(Atom::read_keyword(&token)))
+    }
+
+    /// start with ;
+    fn read_comment(&self, tokens: &mut VecDeque<String>) -> Result<Expr, ParserError> {
+        //dbg!(&tokens);
+        tokens.pop_front();
+
+        let mut start = false;
+        let mut res = String::new();
+        let mut this_token;
+
+        loop {
+            this_token = match tokens.pop_front() {
+                Some(tt) => tt,
+                None => break,
+            };
+
+            if !start {
+                match this_token.as_str() {
+                    ";" | " " => continue,
+                    _ => start = true,
+                }
+            }
+
+            // new line end comment reading
+            if this_token == "\n" {
+                break;
+            }
+
+            res = res + &this_token
+        }
+
+        if res != "" {
+            Ok(Expr::Comment(res.trim_end().to_string()))
+        } else {
+            Ok(Expr::Comment(String::new()))
+        }
     }
 }
 
@@ -505,6 +565,59 @@ mod tests {
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_comment_tokenize() {
+        let parser = Parser::new();
+
+        let s = r#"(def-rpc get-book  ;; comment
+                     '(:title 'string :vesion 'string :lang 'language-perfer)
+                    'book-info)"#;
+        assert_eq!(
+            parser.tokenize(Cursor::new(s.as_bytes())),
+            vec![
+                "(",
+                "def-rpc",
+                " ",
+                "get-book",
+                " ", // one space
+                ";",
+                ";",
+                " ",
+                "comment",
+                "\n",
+                " ",
+                "'",
+                "(",
+                ":",
+                "title",
+                " ",
+                "'",
+                "string",
+                " ",
+                ":",
+                "vesion",
+                " ",
+                "'",
+                "string",
+                " ",
+                ":",
+                "lang",
+                " ",
+                "'",
+                "language-perfer",
+                ")",
+                "\n",
+                " ",
+                "'",
+                "book-info",
+                ")"
+            ]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
         );
     }
 
@@ -678,6 +791,29 @@ mod tests {
                 .to_vec()
             ),)
         );
+    }
+
+    #[test]
+    fn test_read_comment() {
+        let parser = Parser::new();
+
+        let mut t = parser.tokenize(Cursor::new(r#";; comment "#.as_bytes()));
+
+        assert_eq!(
+            parser.read_comment(&mut t),
+            Ok(Expr::Comment("comment".to_string()))
+        );
+
+        let mut t = parser.tokenize(Cursor::new(
+            r#";; comment
+                 ddddd "#
+                .as_bytes(),
+        ));
+
+        assert_eq!(
+            parser.read_comment(&mut t),
+            Ok(Expr::Comment("comment".to_string()))
+        )
     }
 
     #[test]
