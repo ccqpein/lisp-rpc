@@ -1,6 +1,6 @@
 [package]
 name = "lisp-rpc-rust-parser"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
@@ -11,3 +11,4 @@ description = "Core parser for Lisp-RPC, a lightweight, S-expression-based Remot
 itertools = "0"
 tracing = "0"
 tracing-subscriber = { version = "0", features = ["env-filter"] }
+anyhow = "1"
