@@ -2,6 +2,7 @@
 pub mod data;
 mod macros;
 
+use anyhow::Result;
 use std::{collections::VecDeque, error::Error, io::Read};
 use tracing::error;
 
@@ -44,9 +45,9 @@ impl TypeValue {
         }
     }
 
-    pub fn make_symbol(s: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn make_symbol(s: &str) -> Result<Self> {
         if s.contains([' ']) {
-            Err(Box::new(ParserError::CorruptData(
+            Err(anyhow::anyhow!(ParserError::CorruptData(
                 "cannot make symbol with this str",
             )))
         } else {
@@ -147,7 +148,7 @@ impl Expr {
     }
 
     /// Clean all comment expr from List. Unwrap List directly
-    pub fn filter_out_all_comments(&self) -> anyhow::Result<impl Iterator<Item = &Expr>> {
+    pub fn filter_out_all_comments(&self) -> Result<impl Iterator<Item = &Expr>> {
         match self {
             Expr::List(_) => match self.iter() {
                 Some(rest_expr) => Ok(rest_expr.filter(|e| !e.is_comment())),

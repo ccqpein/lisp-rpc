@@ -4,6 +4,7 @@
 
 use std::{cell::OnceCell, collections::HashMap, error::Error, io::Cursor};
 
+use anyhow::{Result, anyhow};
 use itertools::Itertools;
 use tracing::error;
 
@@ -30,13 +31,13 @@ impl std::fmt::Display for DataError {
 impl Error for DataError {}
 
 pub trait FromExpr {
-    fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>>
+    fn from_expr(expr: &Expr) -> Result<Self>
     where
         Self: Sized;
 }
 
 pub trait FromStr: FromExpr {
-    fn from_str(p: &Parser, s: &str) -> Result<Self, Box<dyn Error>>
+    fn from_str(p: &Parser, s: &str) -> Result<Self>
     where
         Self: Sized,
     {
@@ -83,7 +84,7 @@ pub enum Data {
 }
 
 impl Data {
-    pub fn from_expr(e: &Expr) -> Result<Self, Box<dyn Error>> {
+    pub fn from_expr(e: &Expr) -> Result<Self> {
         match e {
             Expr::List(_) => Ok(Self::Data(ExprData::from_expr(e)?)),
             Expr::Quote(expr) => {
@@ -101,14 +102,14 @@ impl Data {
                             // List data
                             Expr::Atom(Atom { .. }) => Ok(Self::List(ListData::from_expr(e)?)),
 
-                            _ => Err(Box::new(DataError {
+                            _ => Err(anyhow!(DataError {
                                 msg: format!("cannot generate Data from the expr {:?}", e),
                                 err_type: DataErrorType::InvalidInput,
                             })),
                         }
                     }
                     Expr::Atom(Atom { value }) => Ok(Self::Value(value.clone())),
-                    _ => Err(Box::new(DataError {
+                    _ => Err(anyhow!(DataError {
                         msg: format!("cannot generate Data from the expr {:?}", e),
                         err_type: DataErrorType::InvalidInput,
                     })),
@@ -117,7 +118,7 @@ impl Data {
             Expr::Atom(a) => match &a.value {
                 TypeValue::Symbol(_) => {
                     error!("symbol cannot be data");
-                    Err(Box::new(DataError {
+                    Err(anyhow!(DataError {
                         msg: format!("cannot generate Data from the symbol {:?}", a),
                         err_type: DataErrorType::InvalidInput,
                     }))
@@ -126,7 +127,7 @@ impl Data {
             },
 
             // cannot handle comment so far, so dont call this function with the comment expr
-            Expr::Comment(_) => Err(Box::new(DataError {
+            Expr::Comment(_) => Err(anyhow!(DataError {
                 msg: format!("cannot generate Data from the comment"),
                 err_type: DataErrorType::InvalidInput,
             })),
@@ -148,7 +149,7 @@ impl Data {
     pub fn new<'a>(
         name: &str,
         kv_pairs: impl Iterator<Item = (&'a str, &'a dyn IntoData)>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self> {
         Ok(Data::Data(ExprData::new(
             name,
             kv_pairs.map(|(s, x)| {
@@ -163,7 +164,7 @@ impl Data {
     }
 
     /// read the root data.
-    pub fn from_root_str(s: &str, parser: Option<&Parser>) -> Result<Self, Box<dyn Error>> {
+    pub fn from_root_str(s: &str, parser: Option<&Parser>) -> Result<Self> {
         let p = match parser {
             Some(p) => p,
             None => &Default::default(),
@@ -172,8 +173,8 @@ impl Data {
         match Self::from_str(&p, s) {
             Ok(d) => match d {
                 Data::Data(expr_data) => Ok(Self::Data(expr_data)),
-                Data::Error(data_error) => Err(Box::new(data_error)),
-                _ => Err(Box::new(DataError {
+                Data::Error(data_error) => Err(anyhow!(data_error)),
+                _ => Err(anyhow!(DataError {
                     msg: "root data has to be expr data".to_string(),
                     err_type: DataErrorType::InvalidInput,
                 })),
@@ -184,7 +185,7 @@ impl Data {
 }
 
 impl FromExpr for Data {
-    fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>>
+    fn from_expr(expr: &Expr) -> Result<Self>
     where
         Self: Sized,
     {
@@ -224,18 +225,18 @@ pub struct ExprData {
 }
 
 impl ExprData {
-    fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>> {
+    fn from_expr(expr: &Expr) -> Result<Self> {
         let exprs = expr.filter_out_all_comments()?.collect::<Vec<_>>();
 
         if exprs.len() < 1 {
-            return Err(Box::new(DataError {
+            return Err(anyhow!(DataError {
                 msg: "empty data".to_string(),
                 err_type: DataErrorType::InvalidInput,
             }));
         }
 
         if exprs.len() % 2 != 1 {
-            return Err(Box::new(DataError {
+            return Err(anyhow!(DataError {
                 msg: "rest data has to be odd length elements".to_string(),
                 err_type: DataErrorType::InvalidInput,
             }));
@@ -246,7 +247,7 @@ impl ExprData {
                 value: crate::TypeValue::Symbol(s),
             }) => s,
             _ => {
-                return Err(Box::new(DataError {
+                return Err(anyhow!(DataError {
                     msg: "data's first element has to be symbol".to_string(),
                     err_type: DataErrorType::InvalidInput,
                 }));
@@ -263,7 +264,7 @@ impl ExprData {
                     _,
                 ) => rest_a.push((k.clone(), Data::from_expr(v)?)),
                 _ => {
-                    return Err(Box::new(DataError {
+                    return Err(anyhow!(DataError {
                         msg: "has to be keyword value pairs".to_string(),
                         err_type: DataErrorType::InvalidInput,
                     }));
@@ -279,10 +280,7 @@ impl ExprData {
     }
 
     /// make new expr data
-    fn new<'a>(
-        name: &str,
-        rest_args: impl Iterator<Item = (Expr, Data)>,
-    ) -> Result<Self, Box<dyn Error>> {
+    fn new<'a>(name: &str, rest_args: impl Iterator<Item = (Expr, Data)>) -> Result<Self> {
         let _ = TypeValue::make_symbol(name)?;
         Ok(Self {
             name: name.to_string(),
@@ -317,7 +315,7 @@ impl ExprData {
 }
 
 impl FromExpr for ExprData {
-    fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>>
+    fn from_expr(expr: &Expr) -> Result<Self>
     where
         Self: Sized,
     {
@@ -345,7 +343,7 @@ pub struct ListData {
 }
 
 impl FromExpr for ListData {
-    fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>>
+    fn from_expr(expr: &Expr) -> Result<Self>
     where
         Self: Sized,
     {
@@ -362,7 +360,7 @@ impl IntoData for ListData {
 }
 
 impl ListData {
-    pub fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>> {
+    pub fn from_expr(expr: &Expr) -> Result<Self> {
         match expr {
             Expr::Quote(expr) => match expr.as_ref() {
                 Expr::List(exprs) => {
@@ -373,13 +371,13 @@ impl ListData {
 
                     Ok(Self { inner_data: res })
                 }
-                _ => Err(Box::new(DataError {
+                _ => Err(anyhow!(DataError {
                     msg: "cannot generate ListData from this expr, not list after quote"
                         .to_string(),
                     err_type: DataErrorType::InvalidInput,
                 })),
             },
-            _ => Err(Box::new(DataError {
+            _ => Err(anyhow!(DataError {
                 msg: "cannot generate ListData from this expr, need quoted".to_string(),
                 err_type: DataErrorType::InvalidInput,
             })),
@@ -401,7 +399,7 @@ pub struct MapData {
 }
 
 impl MapData {
-    pub fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>> {
+    pub fn from_expr(expr: &Expr) -> Result<Self> {
         let mut kwrds = vec![];
         let map = match expr {
             Expr::Quote(e2) => match e2.as_ref() {
@@ -414,7 +412,7 @@ impl MapData {
                                 kwrds.push(k.to_string());
                             }
                             _ => {
-                                return Err(Box::new(DataError {
+                                return Err(anyhow!(DataError {
                                     msg: "MapData has to be keyword pairs like '(:a 1 :b 2)"
                                         .to_string(),
                                     err_type: DataErrorType::InvalidInput,
@@ -426,14 +424,14 @@ impl MapData {
                     DataMap::from_exprs(&ee)?
                 }
                 _ => {
-                    return Err(Box::new(DataError {
+                    return Err(anyhow!(DataError {
                         msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
                         err_type: DataErrorType::InvalidInput,
                     }));
                 }
             },
             _ => {
-                return Err(Box::new(DataError {
+                return Err(anyhow!(DataError {
                     msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
                     err_type: DataErrorType::InvalidInput,
                 }));
@@ -477,7 +475,7 @@ impl MapData {
 }
 
 impl FromExpr for MapData {
-    fn from_expr(expr: &Expr) -> Result<Self, Box<dyn Error>>
+    fn from_expr(expr: &Expr) -> Result<Self>
     where
         Self: Sized,
     {
@@ -505,7 +503,7 @@ struct DataMap {
 }
 
 impl DataMap {
-    fn from_exprs(exprs: &[Expr]) -> Result<Self, Box<dyn Error>> {
+    fn from_exprs(exprs: &[Expr]) -> Result<Self> {
         let mut table = HashMap::new();
         for [k, v] in exprs.iter().array_chunks() {
             match (k, v) {
@@ -518,7 +516,7 @@ impl DataMap {
                     table.insert(k.to_string(), Data::from_expr(v)?);
                 }
                 _ => {
-                    return Err(Box::new(DataError {
+                    return Err(anyhow!(DataError {
                         msg: "has to be keyword value pairs for making the data map".to_string(),
                         err_type: DataErrorType::InvalidInput,
                     }));
@@ -529,7 +527,7 @@ impl DataMap {
         Ok(Self { hash_map: table })
     }
 
-    fn new(kv: &[(Expr, Data)]) -> Result<Self, Box<dyn Error>> {
+    fn new(kv: &[(Expr, Data)]) -> Result<Self> {
         let mut table = HashMap::new();
 
         for (e, d) in kv {
@@ -541,7 +539,7 @@ impl DataMap {
                     dd,
                 ) => table.insert(k.to_string(), dd.clone()),
                 _ => {
-                    return Err(Box::new(DataError {
+                    return Err(anyhow!(DataError {
                         msg: "has to be keyword value pairs for making the data map".to_string(),
                         err_type: DataErrorType::InvalidInput,
                     }));
