@@ -159,7 +159,7 @@ impl DefRPC {
                         kebab_to_snake_case(f),
                         type_translate(t),
                         None,
-                    ));
+                    )?);
                 }
                 (
                     Expr::Atom(Atom {
@@ -189,7 +189,7 @@ impl DefRPC {
                                 kebab_to_snake_case(f),
                                 type_translate(&new_msg_name),
                                 None,
-                            ));
+                            )?);
                         }
                         // list type, the first ele is "list"
                         (
@@ -205,7 +205,7 @@ impl DefRPC {
                                 kebab_to_snake_case(f),
                                 new_type_name,
                                 None,
-                            ));
+                            )?);
                         }
                         _ => {
                             anyhow::bail!(DefRPCError {
@@ -282,9 +282,8 @@ impl RPCSpecLib for DefRPC {
 
 fn de_quoted(e: &Expr) -> &Expr {
     match e {
-        Expr::Atom(_) => e,
-        Expr::List(_) => e,
         Expr::Quote(box expr) => de_quoted(expr),
+        _ => e,
     }
 }
 
@@ -296,7 +295,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_def_rpc() {
+    fn test_parse_def_rpc() -> Result<()> {
         let case = r#"(def-rpc get-book
       '(:title 'string :version 'string :lang 'language-perfer)
     'book-info)"#;
@@ -342,11 +341,13 @@ mod tests {
                 ],
                 return_value: Some("book-info".to_string())
             }
-        )
+        );
+
+        Ok(())
     }
 
     #[test]
-    fn test_create_gen_structs() {
+    fn test_create_gen_structs() -> Result<()> {
         let case = r#"(def-rpc get-book
       '(:title 'string :version 'string :lang 'language-perfer)
     'book-info)"#;
@@ -356,9 +357,9 @@ mod tests {
             vec![GeneratedStruct::new(
                 "get-book",
                 vec![
-                    GeneratedField::new("title".to_string(), "String".to_string(), None),
-                    GeneratedField::new("version".to_string(), "String".to_string(), None),
-                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None),
+                    GeneratedField::new("title".to_string(), "String".to_string(), None)?,
+                    GeneratedField::new("version".to_string(), "String".to_string(), None)?,
+                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None)?,
                 ],
                 None,
                 RPCDataType::Rpc,
@@ -374,9 +375,9 @@ mod tests {
             vec![GeneratedStruct::new(
                 "get-book",
                 vec![
-                    GeneratedField::new("title".to_string(), "String".to_string(), None),
-                    GeneratedField::new("version_aaa".to_string(), "String".to_string(), None),
-                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None),
+                    GeneratedField::new("title".to_string(), "String".to_string(), None)?,
+                    GeneratedField::new("version_aaa".to_string(), "String".to_string(), None)?,
+                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None)?,
                 ],
                 None,
                 RPCDataType::Rpc,
@@ -394,8 +395,8 @@ mod tests {
                 GeneratedStruct::new(
                     "get-book-lang",
                     vec![
-                        GeneratedField::new("lang".to_string(), "String".to_string(), None),
-                        GeneratedField::new("encoding".to_string(), "i64".to_string(), None),
+                        GeneratedField::new("lang".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("encoding".to_string(), "i64".to_string(), None)?,
                     ],
                     None,
                     RPCDataType::Map,
@@ -403,9 +404,9 @@ mod tests {
                 GeneratedStruct::new(
                     "get-book",
                     vec![
-                        GeneratedField::new("title".to_string(), "String".to_string(), None),
-                        GeneratedField::new("version".to_string(), "String".to_string(), None),
-                        GeneratedField::new("lang".to_string(), "GetBookLang".to_string(), None),
+                        GeneratedField::new("title".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("version".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("lang".to_string(), "GetBookLang".to_string(), None)?,
                     ],
                     None,
                     RPCDataType::Rpc,
@@ -424,8 +425,8 @@ mod tests {
                 GeneratedStruct::new(
                     "get-book-lang",
                     vec![
-                        GeneratedField::new("lang".to_string(), "String".to_string(), None),
-                        GeneratedField::new("encoding".to_string(), "i64".to_string(), None),
+                        GeneratedField::new("lang".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("encoding".to_string(), "i64".to_string(), None)?,
                     ],
                     None,
                     RPCDataType::Map,
@@ -433,19 +434,21 @@ mod tests {
                 GeneratedStruct::new(
                     "get-book",
                     vec![
-                        GeneratedField::new("title".to_string(), "String".to_string(), None),
-                        GeneratedField::new("version".to_string(), "String".to_string(), None),
-                        GeneratedField::new("lang".to_string(), "GetBookLang".to_string(), None),
+                        GeneratedField::new("title".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("version".to_string(), "String".to_string(), None)?,
+                        GeneratedField::new("lang".to_string(), "GetBookLang".to_string(), None)?,
                     ],
                     None,
                     RPCDataType::Rpc,
                 ),
             ]
-        )
+        );
+
+        Ok(())
     }
 
     #[test]
-    fn test_gen_code() {
+    fn test_gen_code() -> Result<()> {
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let template_file_path = vec![
             project_root.join("templates/def_struct.rs.template"),
@@ -463,20 +466,22 @@ mod tests {
             dm.gen_code_with_files(&template_file_path).unwrap(),
             r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GetBookLang {
-    lang: String,
-    encoding: i64,
+    pub lang: String,
+    pub encoding: i64,
 }
 
 impl_to_rpc!(GetBookLang, RPCType::Map);
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GetBook {
-    title: String,
-    version: String,
-    lang: GetBookLang,
+    pub title: String,
+    pub version: String,
+    pub lang: GetBookLang,
 }
 
 impl_to_rpc!(GetBook, RPCType::RPC("get-book".to_string()));"#
         );
+
+        Ok(())
     }
 }

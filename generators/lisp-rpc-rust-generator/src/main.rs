@@ -20,7 +20,7 @@ struct Args {
     #[arg(short, long, value_name = "templates-path")]
     templates_path: Option<PathBuf>,
 
-    #[arg(short, long, value_name = "output-path")]
+    #[arg(short, long, value_name = "output-path", default_value = ".")]
     output_path: PathBuf,
 }
 

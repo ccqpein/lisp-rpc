@@ -178,7 +178,22 @@ impl SpecFile {
         // pkg project folder
         let lib_path = output_path.join(self.target_pkg_name.as_ref().context("no lib name")?);
         if lib_path.exists() {
-            anyhow::bail!("the lib exist, delete it first")
+            println!("The library directory already exists at: {:?}", lib_path);
+            print!("Do you want to delete it? [y/N]: ");
+            std::io::stdout().flush().context("failed to flush stdout")?;
+
+            let mut input = String::new();
+            std::io::stdin()
+                .read_line(&mut input)
+                .context("failed to read from stdin")?;
+
+            let trimmed = input.trim().to_lowercase();
+            if trimmed == "y" || trimmed == "yes" {
+                fs::remove_dir_all(&lib_path)
+                    .with_context(|| format!("Failed to delete existing directory {:?}", lib_path))?;
+            } else {
+                anyhow::bail!("the lib exist, delete it first");
+            }
         }
 
         // start to create files
