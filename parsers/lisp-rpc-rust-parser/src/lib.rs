@@ -27,12 +27,80 @@ impl std::fmt::Display for ParserError {
 
 impl Error for ParserError {}
 
+#[derive(Debug, Clone, Copy)]
+pub enum TypeValueNumber {
+    Int(i64),
+    Float(f64),
+}
+
+impl PartialEq for TypeValueNumber {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => a == b,
+            (Self::Float(a), Self::Float(b)) => {
+                if a.is_nan() && b.is_nan() {
+                    true
+                } else {
+                    a == b
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for TypeValueNumber {}
+
+impl std::hash::Hash for TypeValueNumber {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Int(i) => {
+                0u8.hash(state);
+                i.hash(state);
+            }
+            Self::Float(f) => {
+                1u8.hash(state);
+                let bits = if f.is_nan() {
+                    f64::NAN.to_bits()
+                } else if *f == 0.0 {
+                    0.0f64.to_bits()
+                } else {
+                    f.to_bits()
+                };
+                bits.hash(state);
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for TypeValueNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int(i) => write!(f, "{}", i),
+            Self::Float(val) => write!(f, "{}", val),
+        }
+    }
+}
+
+impl std::ops::Add for TypeValueNumber {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Int(a), Self::Int(b)) => Self::Int(a + b),
+            (Self::Float(a), Self::Int(b)) => Self::Float(a + b as f64),
+            (Self::Int(a), Self::Float(b)) => Self::Float(a as f64 + b),
+            (Self::Float(a), Self::Float(b)) => Self::Float(a + b),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum TypeValue {
     Symbol(String),
     String(String),
     Keyword(String),
-    Number(i64),
+    Number(TypeValueNumber),
 }
 
 impl TypeValue {
@@ -80,7 +148,7 @@ impl Atom {
         }
     }
 
-    pub fn read_number(_s: &str, n: i64) -> Self {
+    pub fn read_number(_s: &str, n: TypeValueNumber) -> Self {
         Self {
             value: TypeValue::Number(n),
         }
@@ -304,9 +372,21 @@ impl Parser {
             .ok_or(ParserError::InvalidToken("in read_sym"))?;
 
         if self.read_number_config {
-            match token.parse::<i64>() {
-                Ok(n) => return Ok(Expr::Atom(Atom::read_number(&token, n))),
-                Err(_) => (),
+            if let Ok(n) = token.parse::<i64>() {
+                return Ok(Expr::Atom(Atom::read_number(
+                    &token,
+                    TypeValueNumber::Int(n),
+                )));
+            }
+            if token.chars().next().map_or(false, |c| {
+                c.is_ascii_digit() || c == '.' || c == '+' || c == '-'
+            }) {
+                if let Ok(f) = token.parse::<f64>() {
+                    return Ok(Expr::Atom(Atom::read_number(
+                        &token,
+                        TypeValueNumber::Float(f),
+                    )));
+                }
             }
         }
 
@@ -431,6 +511,26 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    #[test]
+    fn test_add_type_value_number() {
+        assert_eq!(
+            TypeValueNumber::Int(1) + TypeValueNumber::Int(2),
+            TypeValueNumber::Int(3)
+        );
+        assert_eq!(
+            TypeValueNumber::Float(1.5) + TypeValueNumber::Int(2),
+            TypeValueNumber::Float(3.5)
+        );
+        assert_eq!(
+            TypeValueNumber::Int(1) + TypeValueNumber::Float(2.5),
+            TypeValueNumber::Float(3.5)
+        );
+        assert_eq!(
+            TypeValueNumber::Float(1.5) + TypeValueNumber::Float(2.5),
+            TypeValueNumber::Float(4.0)
+        );
+    }
 
     #[test]
     fn test_tokenize() {
@@ -567,6 +667,15 @@ mod tests {
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
         );
+
+        let s = r#"( get-book :price 19.84)"#;
+        assert_eq!(
+            parser.tokenize(Cursor::new(s.as_bytes())),
+            vec!["(", " ", "get-book", " ", ":", "price", " ", "19.84", ")"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -641,7 +750,30 @@ mod tests {
 
         assert_eq!(
             parser.read_atom(&mut t),
-            Ok(Expr::Atom(Atom::read_number("123", 123)))
+            Ok(Expr::Atom(Atom::read_number(
+                "123",
+                TypeValueNumber::Int(123)
+            )))
+        );
+
+        let mut t = parser.tokenize(Cursor::new(r#"1.2"#.as_bytes()));
+
+        assert_eq!(
+            parser.read_atom(&mut t),
+            Ok(Expr::Atom(Atom::read_number(
+                "1.2",
+                TypeValueNumber::Float(1.2)
+            )))
+        );
+
+        let mut t = parser.tokenize(Cursor::new(r#"12344.22131"#.as_bytes()));
+
+        assert_eq!(
+            parser.read_atom(&mut t),
+            Ok(Expr::Atom(Atom::read_number(
+                "12344.22131",
+                TypeValueNumber::Float(12344.22131)
+            )))
         );
     }
 
@@ -787,7 +919,7 @@ mod tests {
                     Expr::Atom(Atom::read_keyword("title")),
                     Expr::Atom(Atom::read_string("hello world")),
                     Expr::Atom(Atom::read_keyword("id")),
-                    Expr::Atom(Atom::read_number("1984", 1984)),
+                    Expr::Atom(Atom::read_number("1984", TypeValueNumber::Int(1984))),
                 ]
                 .to_vec()
             ),)
@@ -831,15 +963,15 @@ mod tests {
                     Expr::Atom(Atom::read("a")),
                     Expr::Atom(Atom::read("b")),
                     Expr::Atom(Atom::read("c")),
-                    Expr::Atom(Atom::read_number("123", 123)),
+                    Expr::Atom(Atom::read_number("123", TypeValueNumber::Int(123))),
                     Expr::Atom(Atom::read("c")),
                 ],),
                 Expr::List(vec![
                     Expr::Atom(Atom::read("a")),
                     Expr::Quote(Box::new(Expr::List(vec![
-                        Expr::Atom(Atom::read_number("1", 1)),
-                        Expr::Atom(Atom::read_number("2", 2)),
-                        Expr::Atom(Atom::read_number("3", 3)),
+                        Expr::Atom(Atom::read_number("1", TypeValueNumber::Int(1))),
+                        Expr::Atom(Atom::read_number("2", TypeValueNumber::Int(2))),
+                        Expr::Atom(Atom::read_number("3", TypeValueNumber::Int(3))),
                     ]))),
                 ],),
             ],
