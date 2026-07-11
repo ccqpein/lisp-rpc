@@ -8,7 +8,10 @@ use anyhow::{Result, anyhow};
 use itertools::Itertools;
 use tracing::error;
 
-use crate::{Atom, Expr, Parser, TypeValue, impl_into_data_for_numbers};
+use crate::{
+    Atom, Expr, Parser, TypeValue, TypeValueNumber, impl_into_data_for_numbers_float,
+    impl_into_data_for_numbers_int,
+};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum DataErrorType {
@@ -58,7 +61,10 @@ pub trait IntoData {
 }
 
 // impl the into data for several type
-impl_into_data_for_numbers!(i8, i16, i32, i64);
+impl_into_data_for_numbers_int!(i8, i16, i32, i64);
+
+// impl the into data for several type
+impl_into_data_for_numbers_float!(f32, f64);
 
 pub trait GetAbleData {
     fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data>;
@@ -613,7 +619,7 @@ mod tests {
         assert_eq!(d.get_name(), "get-book");
         assert_eq!(
             d.get("version"),
-            Some(&Data::Value(TypeValue::Number(1984)))
+            Some(&Data::Value(TypeValue::Number(TypeValueNumber::Int(1984))))
         );
 
         //
@@ -629,7 +635,7 @@ mod tests {
         assert!(d.is_ok());
         assert_eq!(
             d.unwrap().get("version"),
-            Some(&Data::Value(TypeValue::Number(1)))
+            Some(&Data::Value(TypeValue::Number(TypeValueNumber::Int(1))))
         );
 
         let s = r#"(rpc-call :version 1 ;; :aa 2)"#;
@@ -692,7 +698,7 @@ mod tests {
 
         assert_eq!(
             dd.get("encoding"),
-            Some(&Data::Value(TypeValue::Number(77)))
+            Some(&Data::Value(TypeValue::Number(TypeValueNumber::Int(77))))
         );
 
         //
@@ -732,7 +738,8 @@ mod tests {
 
     #[test]
     fn test_read_data_from_str_nesty() {
-        let s = r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4))"#;
+        let s =
+            r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4) :price 12.34)"#;
         let p = Parser::new().config_read_number(true);
 
         //dbg!(p.parse_root(Cursor::new(s)));
@@ -744,7 +751,7 @@ mod tests {
 
         assert_eq!(
             d.to_string(),
-            r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4))"#
+            r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4) :price 12.34)"#
         );
 
         let Data::Data(d) = d else { panic!() };
@@ -764,8 +771,15 @@ mod tests {
         );
 
         assert_eq!(
+            d.get("price"),
+            Some(&Data::Value(TypeValue::Number(TypeValueNumber::Float(
+                12.34
+            )))),
+        );
+
+        assert_eq!(
             d.to_string(),
-            r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4))"#
+            r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4) :price 12.34)"#
         )
     }
 

@@ -152,3 +152,39 @@ fn test_string_serialization() {
     let serialized = lisp_rpc_to_str(a).unwrap();
     assert_eq!(serialized, r#""string""#);
 }
+
+#[test]
+fn test_float_serialization_and_deserialization() {
+    let a = 1.34f64;
+    let serialized = lisp_rpc_to_str(a).unwrap();
+    assert_eq!(serialized, r"1.34");
+
+    let deserialized: f64 = lisp_rpc_from_str(&serialized).unwrap();
+    assert_eq!(deserialized, a);
+
+    let b = 1.34f32;
+    let serialized_b = lisp_rpc_to_str(b).unwrap();
+    assert_eq!(serialized_b, r"1.340000033378601");
+
+    let deserialized_b: f32 = lisp_rpc_from_str(&serialized_b).unwrap();
+    assert_eq!(deserialized_b, b);
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct FloatStruct {
+    a: f64,
+    b: f64,
+}
+
+#[test]
+fn test_float_struct_serialization_and_deserialization() {
+    let s = FloatStruct {
+        a: 1.23,
+        b: 4.56,
+    };
+    let serialized = lisp_rpc_to_str(&s).unwrap();
+    assert_eq!(serialized, r#"(float-struct :a 1.23 :b 4.56)"#);
+
+    let deserialized: FloatStruct = lisp_rpc_from_str(&serialized).unwrap();
+    assert_eq!(deserialized, s);
+}
