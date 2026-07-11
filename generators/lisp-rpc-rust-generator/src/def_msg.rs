@@ -443,7 +443,7 @@ mod tests {
             ),],
         );
 
-        let spec = r#"(def-msg authors :names-a (list 'string))"#;
+        let spec = r#"(def-msg authors :names-a (list 'float))"#;
         let x = DefMsg::from_str(spec, None).unwrap();
         //dbg!(&x);
         assert_eq!(
@@ -452,7 +452,7 @@ mod tests {
                 "authors",
                 vec![GeneratedField::new(
                     "names_a".to_string(),
-                    "Vec<String>".to_string(),
+                    "Vec<f64>".to_string(),
                     None
                 )?,],
                 None,
@@ -499,7 +499,7 @@ impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
         );
 
         //
-        let case = r#"(def-msg language-perfer :lang 'string :version 'number)"#;
+        let case = r#"(def-msg language-perfer :lang 'string :version 'number :price 'float)"#;
         let dm = DefMsg::from_str(case, Default::default()).unwrap();
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
@@ -507,6 +507,7 @@ impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
 pub struct LanguagePerfer {
     pub lang: String,
     pub version: i64,
+    pub price: f64,
 }
 
 impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#

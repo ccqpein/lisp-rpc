@@ -1,4 +1,4 @@
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct {{ name }} {
 {%- for field in fields %}
 {% if field.comment -%}

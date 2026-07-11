@@ -9,7 +9,8 @@ Lisp-RPC supports the following data types:
 
 ** Primary Types
 + *string*: A standard Lisp string (e.g., ="hello"=).
-+ *number*: Integers or floating-point numbers (e.g., =42=, =3.14=).
++ *number*: Integers (e.g., =42=).
++ *float*: Floating-point numbers (e.g., =3.14=).
 + *boolean*: Represented by =T= (true) and =NIL= (false). (Note: In S-expressions, =NIL= also represents an empty list).
 
 ** Complex Types
@@ -68,7 +69,7 @@ Use =def-msg= to define reusable data structures.
   (def-msg message-name :key1 'type1 :key2 'type2 ...)
 #+end_src
 
-- Types can be primary types (='string=, ='number=, ='boolean=).
+- Types can be primary types (='string=, ='number/'int=, ='float=, ='boolean=).
 - Types can be other defined messages.
 - Types can be nested lists: =(list 'type)=.
 - Types can be nested maps: ='(:k1 'type1 :k2 'type2)=. Anonymous maps MUST be quoted.
@@ -80,7 +81,7 @@ Examples:
   (def-msg author-list :names (list 'string))
 
   (def-msg user
-    :id 'number
+    :id 'number ;; or 'int, if it is float, use 'float
     :meta '(:created-at 'string :active 'boolean)) ;; Quoted map schema
 #+end_src
 

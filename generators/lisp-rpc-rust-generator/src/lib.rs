@@ -180,7 +180,9 @@ impl SpecFile {
         if lib_path.exists() {
             println!("The library directory already exists at: {:?}", lib_path);
             print!("Do you want to delete it? [y/N]: ");
-            std::io::stdout().flush().context("failed to flush stdout")?;
+            std::io::stdout()
+                .flush()
+                .context("failed to flush stdout")?;
 
             let mut input = String::new();
             std::io::stdin()
@@ -189,8 +191,9 @@ impl SpecFile {
 
             let trimmed = input.trim().to_lowercase();
             if trimmed == "y" || trimmed == "yes" {
-                fs::remove_dir_all(&lib_path)
-                    .with_context(|| format!("Failed to delete existing directory {:?}", lib_path))?;
+                fs::remove_dir_all(&lib_path).with_context(|| {
+                    format!("Failed to delete existing directory {:?}", lib_path)
+                })?;
             } else {
                 anyhow::bail!("the lib exist, delete it first");
             }
@@ -259,7 +262,8 @@ pub fn kebab_to_snake_case(s: &str) -> String {
 /// the function translate the type, the sym's first chat is upper because the kebab_to_pascal_case
 pub fn type_translate(sym: &str) -> String {
     match kebab_to_pascal_case(sym).as_str() {
-        "Number" => "i64".to_string(),
+        "Number" | "Int" => "i64".to_string(),
+        "Float" => "f64".to_string(),
         s @ _ => s.to_string(),
     }
 }
@@ -358,6 +362,8 @@ mod tests {
         assert_eq!(type_translate("string"), "String");
 
         assert_eq!(type_translate("number"), "i64");
+
+        assert_eq!(type_translate("float"), "f64");
 
         // caution: type_translate will make String become string
         assert_eq!(type_translate("Vec<String>"), "Vec<string>");
