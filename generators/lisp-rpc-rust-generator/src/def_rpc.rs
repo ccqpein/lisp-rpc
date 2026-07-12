@@ -464,7 +464,7 @@ mod tests {
 
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct GetBookLang {
     pub lang: String,
     pub encoding: i64,
@@ -472,7 +472,7 @@ pub struct GetBookLang {
 
 impl_to_rpc!(GetBookLang, RPCType::Map);
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct GetBook {
     pub title: String,
     pub version: String,

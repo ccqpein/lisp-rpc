@@ -10,4 +10,5 @@ lisp-rpc-rust-serializer = "0"
 lisp-rpc-rust-server = "0"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
-env_logger = "0"
+tracing = "0"
+tracing-subscriber = { version = "0", features = ["env-filter"] }

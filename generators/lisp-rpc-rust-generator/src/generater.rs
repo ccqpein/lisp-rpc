@@ -167,7 +167,7 @@ mod tests {
         //dbg!(tera.render("test", &context).unwrap());
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct name {
     pub a: String,
     pub a: i64,
@@ -189,7 +189,7 @@ pub struct name {
         //dbg!(tera.render("test", &context).unwrap());
         assert_eq!(
             tera.render("test", &context).unwrap(),
-            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct name {
 }"#
         );

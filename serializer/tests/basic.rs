@@ -6,13 +6,6 @@ pub struct LanguagePerfer {
     lang: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct OptionStruct {
-    b: Option<i32>,
-    c: Option<i32>,
-    d: Option<String>,
-}
-
 #[test]
 fn test_basic_serialization() {
     let mut buf = Vec::with_capacity(1024);
@@ -32,11 +25,16 @@ fn test_basic_serialization() {
     assert_eq!(lpd, lp);
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OptionStruct {
+    b: Option<i32>,
+    c: Option<i32>,
+    d: Option<String>,
+}
+
 #[test]
 fn test_option_deserialization() {
     let serialized = r#"(option-struct :b 1 :d "aaa")"#;
-    //let mut ds = LispRPCDeserializer::from_str(serialized);
-    //let result: Result<OptionStruct, _> = OptionStruct::deserialize(&mut ds);
     let result = lisp_rpc_from_str::<OptionStruct>(serialized);
     assert_eq!(
         result.unwrap(),
@@ -46,20 +44,26 @@ fn test_option_deserialization() {
             d: Some("aaa".to_string()),
         }
     );
-}
 
-#[test]
-fn test_option_some_deserialization() {
-    let serialized = r#"(option-struct :b 1 :c 2)"#;
-    let mut ds = LispRPCDeserializer::from_str(serialized);
-    let result: Result<OptionStruct, _> = OptionStruct::deserialize(&mut ds);
+    //
+    let serialized = r#"(option-struct :b 1 :c nil :d "aaa")"#;
+    let result = lisp_rpc_from_str::<OptionStruct>(serialized);
     assert_eq!(
         result.unwrap(),
         OptionStruct {
             b: Some(1),
-            c: Some(2),
-            d: None,
+            c: None,
+            d: Some("aaa".to_string()),
         }
+    );
+    assert_eq!(
+        serialized,
+        lisp_rpc_to_str(OptionStruct {
+            b: Some(1),
+            c: None,
+            d: Some("aaa".to_string()),
+        })
+        .unwrap()
     );
 }
 
@@ -178,10 +182,7 @@ pub struct FloatStruct {
 
 #[test]
 fn test_float_struct_serialization_and_deserialization() {
-    let s = FloatStruct {
-        a: 1.23,
-        b: 4.56,
-    };
+    let s = FloatStruct { a: 1.23, b: 4.56 };
     let serialized = lisp_rpc_to_str(&s).unwrap();
     assert_eq!(serialized, r#"(float-struct :a 1.23 :b 4.56)"#);
 

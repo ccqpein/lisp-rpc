@@ -1,14 +1,15 @@
 [package]
-name = "lisp-rpc-rust-parser"
-version = "0.1.4"
+name = "lisp-rpc-rust-raw-data"
+version = "0.1.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Core parser for Lisp-RPC, a lightweight, S-expression-based Remote Procedure Call protocol."
+description = "Raw data mode for lisp-rpc"
 
 [dependencies]
-itertools = "0"
 tracing = "0"
 tracing-subscriber = { version = "0", features = ["env-filter"] }
+itertools = "0"
 anyhow = "1"
+lisp-rpc-rust-parser = { workspace = true }

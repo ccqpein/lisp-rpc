@@ -6,3 +6,4 @@ publish = false
 
 [dependencies]
 lisp-rpc-rust-parser = { workspace = true }
+lisp-rpc-rust-raw-data = { workspace = true }

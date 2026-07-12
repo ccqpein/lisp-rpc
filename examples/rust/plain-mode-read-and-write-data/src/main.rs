@@ -1,4 +1,5 @@
-use lisp_rpc_rust_parser::{Parser, TypeValue, data::*}; // import the data module
+use lisp_rpc_rust_parser::{Parser, TypeValue};
+use lisp_rpc_rust_raw_data::*; // import the data module
 
 fn main() {
     // client send some data

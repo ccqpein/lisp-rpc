@@ -1,5 +1,3 @@
-#![feature(iter_array_chunks)]
-pub mod data;
 mod macros;
 
 use anyhow::Result;
@@ -352,7 +350,7 @@ impl Parser {
     }
 
     /// choose which read function
-    fn read_router(
+    pub fn read_router(
         &self,
         token: &str,
     ) -> Result<fn(&Self, &mut VecDeque<String>) -> Result<Expr, ParserError>, ParserError> {

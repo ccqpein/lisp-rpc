@@ -1,6 +1,7 @@
 //! The pure rpc data like (get-book :title "hello world" :version "1984").
 //!
 //! The first symbol is the name of data, and everything else are the "arguments"
+#![feature(iter_array_chunks)]
 
 use std::{cell::OnceCell, collections::HashMap, error::Error, io::Cursor};
 
@@ -8,7 +9,7 @@ use anyhow::{Result, anyhow};
 use itertools::Itertools;
 use tracing::error;
 
-use crate::{
+use lisp_rpc_rust_parser::{
     Atom, Expr, Parser, TypeValue, TypeValueNumber, impl_into_data_for_numbers_float,
     impl_into_data_for_numbers_int,
 };
