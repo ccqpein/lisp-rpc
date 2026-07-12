@@ -476,7 +476,7 @@ mod tests {
         dbg!(&dm);
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Authors {
     pub names: Vec<String>,
 }
@@ -490,7 +490,7 @@ impl_to_rpc!(Authors, RPCType::Msg("authors".to_string()));"#
 
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct LanguagePerfer {
     pub lang: String,
 }
@@ -503,7 +503,7 @@ impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
         let dm = DefMsg::from_str(case, Default::default()).unwrap();
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct LanguagePerfer {
     pub lang: String,
     pub version: i64,
@@ -524,7 +524,7 @@ impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
         //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct BookInfoLang {
     pub a: String,
     pub b: i64,
@@ -532,7 +532,7 @@ pub struct BookInfoLang {
 
 impl_to_rpc!(BookInfoLang, RPCType::Map);
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct BookInfo {
     pub lang: BookInfoLang,
     pub title: String,

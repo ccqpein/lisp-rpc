@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use lisp_rpc_rust_generator::*;
-use log::error;
+use tracing::error;
 use rust_embed::Embed;
 use std::fs::{self, File};
 use std::io;
@@ -126,7 +126,7 @@ fn no_templates_path(output_path: &PathBuf, specs: &SpecFile) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
 
     let args = Args::parse();
 

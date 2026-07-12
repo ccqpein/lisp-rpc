@@ -1,0 +1,15 @@
+[package]
+name = "lisp-rpc-rust-raw-data"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Core raw data structures for dynamic, schema-free S-expression parsing and manipulation in Lisp-RPC."
+
+[dependencies]
+tracing = "0"
+tracing-subscriber = { version = "0", features = ["env-filter"] }
+itertools = "0"
+anyhow = "1"
+lisp-rpc-rust-parser = { workspace = true }
