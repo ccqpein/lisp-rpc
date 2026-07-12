@@ -55,6 +55,10 @@ Implementation of code generators that transform =.lisprpc= specs into library c
 
 Core Lisp-RPC parsers (primarily written in Rust).
 
+** [[file:raw-data/][raw-data/]]
+
+Core raw data structures (like the =Data= enum) used for dynamic, plain-mode communication.
+
 ** [[file:serializer][serializer/]]
 
 Core serialization and deserialization logic.
@@ -97,7 +101,7 @@ Check [[file:examples/rust/serialize-struct-to-lisprpc/][this example]] for more
 
 ** Handling Plain Mode
 
-~lisp_rpc_rust_parser::data::Data~ can parse a string directly into a ~Data~ object, which can then be accessed using ~.get(keyname)~.
+~lisp_rpc_rust_raw_data::Data~ can parse a string directly into a ~Data~ object, which can then be accessed using ~.get(keyname)~.
 
 Check [[file:examples/rust/plain-mode-read-and-write-data/][this example]] for more details.
 

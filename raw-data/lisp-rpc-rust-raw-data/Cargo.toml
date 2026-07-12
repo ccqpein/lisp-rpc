@@ -5,7 +5,7 @@ edition = "2024"
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Raw data mode for lisp-rpc"
+description = "Core raw data structures for dynamic, schema-free S-expression parsing and manipulation in Lisp-RPC."
 
 [dependencies]
 tracing = "0"
