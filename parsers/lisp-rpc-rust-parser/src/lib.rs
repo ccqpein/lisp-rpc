@@ -1,5 +1,3 @@
-mod macros;
-
 use anyhow::Result;
 use std::{collections::VecDeque, error::Error, io::Read};
 use tracing::error;
@@ -235,12 +233,15 @@ pub struct Parser {
     /// will read number if this field is true. default is true
     /// turn it off will treat the number as the symbol in Expr
     read_number_config: bool,
+
+    tokens: VecDeque<String>,
 }
 
 impl Default for Parser {
     fn default() -> Self {
         Self {
             read_number_config: true,
+            tokens: VecDeque::new(),
         }
     }
 }
@@ -249,6 +250,7 @@ impl Parser {
     pub fn new() -> Self {
         Self {
             read_number_config: true,
+            tokens: VecDeque::new(),
         }
     }
 
@@ -259,7 +261,7 @@ impl Parser {
     }
 
     /// tokenize the source code
-    pub fn tokenize(&self, mut source_code: impl Read) -> VecDeque<String> {
+    pub fn tokenize(&mut self, mut source_code: impl Read) -> Result<()> {
         let mut buf = [0; 1];
         let mut cache = vec![];
         let mut res = vec![];
@@ -295,21 +297,22 @@ impl Parser {
             res.push(String::from_utf8(cache.clone()).unwrap());
         }
 
-        res.into()
+        self.tokens = res.into();
+
+        Ok(())
     }
 
-    pub fn parse_root(&mut self, source_code: impl Read) -> Result<Vec<Expr>, ParserError> {
-        let mut tokens = self.tokenize(source_code);
+    pub fn parse_root(&mut self) -> Result<Vec<Expr>, ParserError> {
         let mut res = vec![];
 
         loop {
-            match tokens.front() {
+            match self.tokens.front() {
                 Some(b) => match b.as_str() {
                     "(" => {
-                        res.push(self.read_exp(&mut tokens)?);
+                        res.push(self.read_exp()?);
                     }
                     " " | "\n" => {
-                        tokens.pop_front();
+                        self.tokens.pop_front();
                     }
                     _ => {
                         return {
@@ -325,17 +328,15 @@ impl Parser {
         Ok(res)
     }
 
-    pub fn parse_root_one(&mut self, source_code: impl Read) -> Result<Expr, ParserError> {
-        let mut tokens = self.tokenize(source_code);
-
+    pub fn parse_root_one(&mut self) -> Result<Expr, ParserError> {
         loop {
-            match tokens.front() {
+            match self.tokens.front() {
                 Some(b) => match b.as_str() {
                     "(" => {
-                        return Ok(self.read_exp(&mut tokens)?);
+                        return Ok(self.read_exp()?);
                     }
                     " " | "\n" => {
-                        tokens.pop_front();
+                        self.tokens.pop_front();
                     }
                     _ => {
                         return {
@@ -353,7 +354,7 @@ impl Parser {
     pub fn read_router(
         &self,
         token: &str,
-    ) -> Result<fn(&Self, &mut VecDeque<String>) -> Result<Expr, ParserError>, ParserError> {
+    ) -> Result<fn(&mut Self) -> Result<Expr, ParserError>, ParserError> {
         match token {
             "(" => Ok(Self::read_exp),
             "'" => Ok(Self::read_quote),
@@ -364,8 +365,9 @@ impl Parser {
         }
     }
 
-    fn read_atom(&self, tokens: &mut VecDeque<String>) -> Result<Expr, ParserError> {
-        let token = tokens
+    fn read_atom(&mut self) -> Result<Expr, ParserError> {
+        let token = self
+            .tokens
             .pop_front()
             .ok_or(ParserError::InvalidToken("in read_sym"))?;
 
@@ -391,13 +393,13 @@ impl Parser {
         Ok(Expr::Atom(Atom::read(&token)))
     }
 
-    fn read_quote(&self, tokens: &mut VecDeque<String>) -> Result<Expr, ParserError> {
-        tokens
+    fn read_quote(&mut self) -> Result<Expr, ParserError> {
+        self.tokens
             .pop_front()
             .ok_or(ParserError::InvalidToken("in read_quote"))?;
 
-        let res = match tokens.front() {
-            Some(t) => self.read_router(t)?(self, tokens)?,
+        let res = match self.tokens.front() {
+            Some(t) => self.read_router(t)?(self)?,
             None => return Err(ParserError::InvalidToken("in read_quote")),
         };
 
@@ -405,21 +407,21 @@ impl Parser {
     }
 
     /// start from '\('
-    pub fn read_exp(&self, tokens: &mut VecDeque<String>) -> Result<Expr, ParserError> {
+    pub fn read_exp(&mut self) -> Result<Expr, ParserError> {
         let mut res = vec![];
-        tokens.pop_front();
+        self.tokens.pop_front();
 
         loop {
-            match tokens.front() {
+            match self.tokens.front() {
                 Some(t) if t == ")" => {
-                    tokens.pop_front();
+                    self.tokens.pop_front();
                     break;
                 }
                 // ignore spaces
                 Some(t) if t == " " || t == "\n" => {
-                    tokens.pop_front();
+                    self.tokens.pop_front();
                 }
-                Some(t) => res.push(self.read_router(t)?(self, tokens)?),
+                Some(t) => res.push(self.read_router(t)?(self)?),
                 None => return Err(ParserError::InvalidToken("in read_exp, the tokens run out")),
             }
         }
@@ -428,14 +430,15 @@ impl Parser {
     }
 
     /// start with "
-    fn read_string(&self, tokens: &mut VecDeque<String>) -> Result<Expr, ParserError> {
-        tokens.pop_front();
+    fn read_string(&mut self) -> Result<Expr, ParserError> {
+        self.tokens.pop_front();
 
         let mut escape = false;
         let mut res = String::new();
         let mut this_token;
         loop {
-            this_token = tokens
+            this_token = self
+                .tokens
                 .pop_front()
                 .ok_or(ParserError::InvalidToken("in read_string"))?;
 
@@ -456,10 +459,11 @@ impl Parser {
     }
 
     /// start with :
-    fn read_keyword(&self, tokens: &mut VecDeque<String>) -> Result<Expr, ParserError> {
-        tokens.pop_front();
+    fn read_keyword(&mut self) -> Result<Expr, ParserError> {
+        self.tokens.pop_front();
 
-        let token = tokens
+        let token = self
+            .tokens
             .pop_front()
             .ok_or(ParserError::InvalidToken("in read_keyword"))?;
 
@@ -467,16 +471,16 @@ impl Parser {
     }
 
     /// start with ;
-    fn read_comment(&self, tokens: &mut VecDeque<String>) -> Result<Expr, ParserError> {
+    fn read_comment(&mut self) -> Result<Expr, ParserError> {
         //dbg!(&tokens);
-        tokens.pop_front();
+        self.tokens.pop_front();
 
         let mut start = false;
         let mut res = String::new();
         let mut this_token;
 
         loop {
-            this_token = match tokens.pop_front() {
+            this_token = match self.tokens.pop_front() {
                 Some(tt) => tt,
                 None => break,
             };
@@ -510,6 +514,12 @@ mod tests {
 
     use super::*;
 
+    fn tokenize_to_vec(s: &str) -> Vec<String> {
+        let mut parser = Parser::new();
+        parser.tokenize(Cursor::new(s.as_bytes())).unwrap();
+        parser.tokens.into_iter().collect::<Vec<_>>()
+    }
+
     #[test]
     fn test_add_type_value_number() {
         assert_eq!(
@@ -532,11 +542,10 @@ mod tests {
 
     #[test]
     fn test_tokenize() {
-        let parser = Parser::new();
         //
         let s = "(a b c 123 c)";
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec!["(", "a", " ", "b", " ", "c", " ", "123", " ", "c", ")"]
                 .into_iter()
                 .map(|s| s.to_string())
@@ -546,7 +555,7 @@ mod tests {
         //
         let s = r#"(a '(""))"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec!["(", "a", " ", "'", "(", "\"", "\"", ")", ")"]
                 .into_iter()
                 .map(|s| s.to_string())
@@ -556,7 +565,7 @@ mod tests {
         //
         let s = r#"(a '() '1)"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec!["(", "a", " ", "'", "(", ")", " ", "'", "1", ")"]
                 .into_iter()
                 .map(|s| s.to_string())
@@ -566,7 +575,7 @@ mod tests {
         //
         let s = r#"(def-msg language-perfer :lang 'string)"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec![
                 "(",
                 "def-msg",
@@ -590,7 +599,7 @@ mod tests {
                      '(:title 'string :vesion 'string :lang 'language-perfer)
                     'book-info)"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec![
                 "(",
                 "def-rpc",
@@ -632,7 +641,7 @@ mod tests {
         //
         let s = r#"(get-book :title "hello world" :version "1984")"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec![
                 "(", "get-book", " ", ":", "title", " ", "\"", "hello", " ", "world", "\"", " ",
                 ":", "version", " ", "\"", "1984", "\"", ")"
@@ -645,7 +654,7 @@ mod tests {
         // escapr "
         let s = r#"( get-book :title "hello \"world" :version "1984")"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec![
                 "(", " ", "get-book", " ", ":", "title", " ", "\"", "hello", " ", "\\", "\"",
                 "world", "\"", " ", ":", "version", " ", "\"", "1984", "\"", ")"
@@ -659,7 +668,7 @@ mod tests {
 
         let s = r#"( get-book :id 1984)"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec!["(", " ", "get-book", " ", ":", "id", " ", "1984", ")"]
                 .into_iter()
                 .map(|s| s.to_string())
@@ -668,7 +677,7 @@ mod tests {
 
         let s = r#"( get-book :price 19.84)"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec!["(", " ", "get-book", " ", ":", "price", " ", "19.84", ")"]
                 .into_iter()
                 .map(|s| s.to_string())
@@ -678,13 +687,11 @@ mod tests {
 
     #[test]
     fn test_comment_tokenize() {
-        let parser = Parser::new();
-
         let s = r#"(def-rpc get-book  ;; comment
                      '(:title 'string :vesion 'string :lang 'language-perfer)
                     'book-info)"#;
         assert_eq!(
-            parser.tokenize(Cursor::new(s.as_bytes())),
+            tokenize_to_vec(s),
             vec![
                 "(",
                 "def-rpc",
@@ -731,43 +738,43 @@ mod tests {
 
     #[test]
     fn test_read_string() {
-        let parser = Parser::new();
-        let mut t = parser.tokenize(Cursor::new(r#""hello""#.as_bytes()));
+        let mut parser = Parser::new();
+        parser.tokenize(Cursor::new(r#""hello""#.as_bytes())).unwrap();
         assert_eq!(
-            parser.read_string(&mut t),
+            parser.read_string(),
             Ok(Expr::Atom(Atom::read_string("hello")))
         );
-        assert!(t.is_empty());
+        assert!(parser.tokens.is_empty());
     }
 
     #[test]
     fn test_read_number() {
-        let parser = Parser::new().config_read_number(true);
+        let mut parser = Parser::new().config_read_number(true);
 
-        let mut t = parser.tokenize(Cursor::new(r#"123"#.as_bytes()));
+        parser.tokenize(Cursor::new(r#"123"#.as_bytes())).unwrap();
 
         assert_eq!(
-            parser.read_atom(&mut t),
+            parser.read_atom(),
             Ok(Expr::Atom(Atom::read_number(
                 "123",
                 TypeValueNumber::Int(123)
             )))
         );
 
-        let mut t = parser.tokenize(Cursor::new(r#"1.2"#.as_bytes()));
+        parser.tokenize(Cursor::new(r#"1.2"#.as_bytes())).unwrap();
 
         assert_eq!(
-            parser.read_atom(&mut t),
+            parser.read_atom(),
             Ok(Expr::Atom(Atom::read_number(
                 "1.2",
                 TypeValueNumber::Float(1.2)
             )))
         );
 
-        let mut t = parser.tokenize(Cursor::new(r#"12344.22131"#.as_bytes()));
+        parser.tokenize(Cursor::new(r#"12344.22131"#.as_bytes())).unwrap();
 
         assert_eq!(
-            parser.read_atom(&mut t),
+            parser.read_atom(),
             Ok(Expr::Atom(Atom::read_number(
                 "12344.22131",
                 TypeValueNumber::Float(12344.22131)
@@ -777,10 +784,10 @@ mod tests {
 
     #[test]
     fn test_read_exp() {
-        let parser = Parser::new().config_read_number(false);
-        let mut t = parser.tokenize(Cursor::new("(a b c 123 c)".as_bytes()));
+        let mut parser = Parser::new().config_read_number(false);
+        parser.tokenize(Cursor::new("(a b c 123 c)".as_bytes())).unwrap();
         assert_eq!(
-            parser.read_exp(&mut t),
+            parser.read_exp(),
             Ok(Expr::List(
                 [
                     Expr::Atom(Atom::read("a")),
@@ -792,13 +799,12 @@ mod tests {
                 .to_vec()
             ),)
         );
-        //dbg!(&t);
-        assert!(t.is_empty());
+        assert!(parser.tokens.is_empty());
 
         //
-        let mut t = parser.tokenize(Cursor::new("((a) b c 123 c)".as_bytes()));
+        parser.tokenize(Cursor::new("((a) b c 123 c)".as_bytes())).unwrap();
         assert_eq!(
-            parser.read_exp(&mut t),
+            parser.read_exp(),
             Ok(Expr::List(
                 [
                     Expr::List([Expr::Atom(Atom::read("a"))].to_vec()),
@@ -810,15 +816,14 @@ mod tests {
                 .to_vec()
             ),)
         );
-        //dbg!(&t);
-        assert!(t.is_empty());
+        assert!(parser.tokens.is_empty());
 
         //
-        let mut t = parser.tokenize(Cursor::new(
+        parser.tokenize(Cursor::new(
             r#"(def-msg language-perfer :lang 'string)"#.as_bytes(),
-        ));
+        )).unwrap();
         assert_eq!(
-            parser.read_exp(&mut t),
+            parser.read_exp(),
             Ok(Expr::List(
                 [
                     Expr::Atom(Atom::read("def-msg")),
@@ -829,18 +834,17 @@ mod tests {
                 .to_vec()
             ),)
         );
-        //dbg!(&t);
-        assert!(t.is_empty());
+        assert!(parser.tokens.is_empty());
 
         //
-        let mut t = parser.tokenize(Cursor::new(
+        parser.tokenize(Cursor::new(
             r#"(def-rpc get-book
                      '(:title 'string :version 'string :lang 'language-perfer)
                     'book-info)"#
                 .as_bytes(),
-        ));
+        )).unwrap();
         assert_eq!(
-            parser.read_exp(&mut t),
+            parser.read_exp(),
             Ok(Expr::List(
                 [
                     Expr::Atom(Atom::read("def-rpc")),
@@ -861,16 +865,16 @@ mod tests {
                 .to_vec()
             ),)
         );
-        //dbg!(&t);
-        assert!(t.is_empty());
+        assert!(parser.tokens.is_empty());
 
         //
-        let mut t = parser.tokenize(Cursor::new(
-            r#"(get-book :title "hello world" :version "1984")"#.as_bytes(),
-        ));
+        parser.tokenize(Cursor::new(
+            r#"(get-book :title "hello world" :version "1984")"#
+                .as_bytes(),
+        )).unwrap();
 
         assert_eq!(
-            parser.read_exp(&mut t),
+            parser.read_exp(),
             Ok(Expr::List(
                 [
                     Expr::Atom(Atom::read("get-book")),
@@ -883,12 +887,13 @@ mod tests {
             ),)
         );
 
-        let mut t = parser.tokenize(Cursor::new(
-            r#"(get-book :title "hello \"world" :version "1984")"#.as_bytes(),
-        ));
+        parser.tokenize(Cursor::new(
+            r#"(get-book :title "hello \"world" :version "1984")"#
+                .as_bytes(),
+        )).unwrap();
 
         assert_eq!(
-            parser.read_exp(&mut t),
+            parser.read_exp(),
             Ok(Expr::List(
                 [
                     Expr::Atom(Atom::read("get-book")),
@@ -903,14 +908,15 @@ mod tests {
 
         //
 
-        let parser = Parser::new().config_read_number(true);
+        let mut parser = Parser::new().config_read_number(true);
 
-        let mut t = parser.tokenize(Cursor::new(
-            r#"(get-book :title "hello world" :id 1984)"#.as_bytes(),
-        ));
+        parser.tokenize(Cursor::new(
+            r#"(get-book :title "hello world" :id 1984)"#
+                .as_bytes(),
+        )).unwrap();
 
         assert_eq!(
-            parser.read_exp(&mut t),
+            parser.read_exp(),
             Ok(Expr::List(
                 [
                     Expr::Atom(Atom::read("get-book")),
@@ -926,23 +932,23 @@ mod tests {
 
     #[test]
     fn test_read_comment() {
-        let parser = Parser::new();
+        let mut parser = Parser::new();
 
-        let mut t = parser.tokenize(Cursor::new(r#";; comment "#.as_bytes()));
+        parser.tokenize(Cursor::new(r#";; comment "#.as_bytes())).unwrap();
 
         assert_eq!(
-            parser.read_comment(&mut t),
+            parser.read_comment(),
             Ok(Expr::Comment("comment".to_string()))
         );
 
-        let mut t = parser.tokenize(Cursor::new(
+        parser.tokenize(Cursor::new(
             r#";; comment
                  ddddd "#
                 .as_bytes(),
-        ));
+        )).unwrap();
 
         assert_eq!(
-            parser.read_comment(&mut t),
+            parser.read_comment(),
             Ok(Expr::Comment("comment".to_string()))
         )
     }
@@ -951,9 +957,8 @@ mod tests {
     fn test_read_root() {
         let mut parser = Parser::new();
 
-        let expr = parser
-            .parse_root(&mut Cursor::new("(a b c 123 c) (a '(1 2 3))".as_bytes()))
-            .unwrap();
+        parser.tokenize(Cursor::new("(a b c 123 c) (a '(1 2 3))".as_bytes())).unwrap();
+        let expr = parser.parse_root().unwrap();
         assert_eq!(
             expr,
             vec![
@@ -975,9 +980,8 @@ mod tests {
             ],
         );
 
-        let expr = parser
-            .parse_root(Cursor::new(r#"('a "hello")"#.as_bytes()))
-            .unwrap();
+        parser.tokenize(Cursor::new(r#"('a "hello")"#.as_bytes())).unwrap();
+        let expr = parser.parse_root().unwrap();
         assert_eq!(
             expr,
             vec![Expr::List(vec![
@@ -987,7 +991,7 @@ mod tests {
         );
 
         //
-        let mut t = Cursor::new(
+        let t = Cursor::new(
             r#"(def-msg language-perfer :lang 'string)
 
 (def-rpc get-book
@@ -997,7 +1001,9 @@ mod tests {
         );
 
         let s0 = Cursor::new(r#"(def-msg language-perfer :lang 'string)"#.as_bytes());
-        let mut t0 = parser.tokenize(s0.clone());
+        let mut parser0 = Parser::new();
+        parser0.tokenize(s0).unwrap();
+        let expr0 = parser0.read_exp().unwrap();
 
         let s1 = Cursor::new(
             r#"(def-rpc get-book
@@ -1005,22 +1011,22 @@ mod tests {
                     'book-info)"#
                 .as_bytes(),
         );
-        let mut t1 = parser.tokenize(s1.clone());
+        let mut parser1 = Parser::new();
+        parser1.tokenize(s1).unwrap();
+        let expr1 = parser1.read_exp().unwrap();
 
-        let expr = parser.parse_root(&mut t).unwrap();
+        parser.tokenize(t).unwrap();
+        let expr = parser.parse_root().unwrap();
         assert_eq!(
             expr,
-            vec![
-                parser.read_exp(&mut t0).unwrap(),
-                parser.read_exp(&mut t1).unwrap()
-            ]
+            vec![expr0, expr1]
         );
     }
 
     #[test]
     fn test_read_root_one() {
         let mut parser = Parser::new();
-        let mut t = Cursor::new(
+        let t = Cursor::new(
             r#"(def-msg language-perfer :lang 'string)
 
 (def-rpc get-book
@@ -1028,19 +1034,21 @@ mod tests {
                     'book-info)"#
                 .as_bytes(),
         );
-
-        let expr = parser.parse_root_one(&mut t).unwrap();
+        parser.tokenize(t).unwrap();
+        let expr = parser.parse_root_one().unwrap();
 
         let s0 = Cursor::new(r#"(def-msg language-perfer :lang 'string)"#.as_bytes());
-        let mut t0 = parser.tokenize(s0.clone());
+        let mut parser2 = Parser::new();
+        parser2.tokenize(s0).unwrap();
+        let expr0 = parser2.read_exp().unwrap();
 
-        assert_eq!(expr, parser.read_exp(&mut t0).unwrap(),);
+        assert_eq!(expr, expr0);
     }
 
     #[test]
     fn test_into_tokens() {
         let mut parser = Parser::new();
-        let mut t = Cursor::new(
+        let t = Cursor::new(
             r#"(def-msg language-perfer :lang 'string)
 
 (def-rpc get-book
@@ -1048,8 +1056,8 @@ mod tests {
                     'book-info)"#
                 .as_bytes(),
         );
-
-        let expr = parser.parse_root(&mut t).unwrap();
+        parser.tokenize(t).unwrap();
+        let expr = parser.parse_root().unwrap();
 
         assert_eq!(
             expr.into_iter().map(|e|e.into_tokens()).collect::<Vec<String>>(),
