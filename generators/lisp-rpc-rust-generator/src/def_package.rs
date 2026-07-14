@@ -94,9 +94,10 @@ impl DefPkg {
             None => Default::default(),
         };
 
-        let expr = p.parse_root_one(Cursor::new(source))?;
+        p.tokenize(Cursor::new(source))?;
+        p.parse_one()?;
 
-        Self::from_expr(&expr)
+        Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }
 
     fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {

@@ -3,16 +3,16 @@
 //! The first symbol is the name of data, and everything else are the "arguments"
 #![feature(iter_array_chunks)]
 
+pub mod files;
+mod macros;
+
 use std::{cell::OnceCell, collections::HashMap, error::Error, io::Cursor};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use itertools::Itertools;
 use tracing::error;
 
-use lisp_rpc_rust_parser::{
-    Atom, Expr, Parser, TypeValue, TypeValueNumber, impl_into_data_for_numbers_float,
-    impl_into_data_for_numbers_int,
-};
+use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue, TypeValueNumber};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum DataErrorType {
@@ -41,19 +41,15 @@ pub trait FromExpr {
 }
 
 pub trait FromStr: FromExpr {
-    fn from_str(p: &Parser, s: &str) -> Result<Self>
+    fn from_str(p: &mut Parser, s: &str) -> Result<Self>
     where
         Self: Sized,
     {
         let c = Cursor::new(s);
-        let mut tkn = p.tokenize(c);
+        p.tokenize(c)?; // replace the tokens in parser
+        p.parse_one()?;
 
-        let exp = p.read_router(tkn.get(0).ok_or(DataError {
-            msg: "empty str".to_string(),
-            err_type: DataErrorType::InvalidInput,
-        })?)?(p, &mut tkn)?;
-
-        Self::from_expr(&exp)
+        Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }
 }
 
@@ -171,13 +167,13 @@ impl Data {
     }
 
     /// read the root data.
-    pub fn from_root_str(s: &str, parser: Option<&Parser>) -> Result<Self> {
+    pub fn from_root_str(s: &str, parser: Option<&mut Parser>) -> Result<Self> {
         let p = match parser {
             Some(p) => p,
-            None => &Default::default(),
+            None => &mut Default::default(),
         };
 
-        match Self::from_str(&p, s) {
+        match Self::from_str(p, s) {
             Ok(d) => match d {
                 Data::Data(expr_data) => Ok(Self::Data(expr_data)),
                 Data::Error(data_error) => Err(anyhow!(data_error)),
@@ -597,8 +593,8 @@ mod tests {
     #[test]
     fn test_read_data_from_str() {
         let s = r#"(get-book :title "hello world" :version "1984")"#;
-        let p = Parser::new();
-        let d = ExprData::from_str(&p, s);
+        let mut p = Parser::new();
+        let d = ExprData::from_str(&mut p, s);
         //dbg!(&d);
         assert!(d.is_ok());
 
@@ -608,14 +604,15 @@ mod tests {
         assert_eq!(dd.get_name(), "get-book");
         assert_eq!(
             dd.get("title"),
-            Some(&Data::from_str(&p, r#""hello world""#).unwrap())
+            Some(&Data::from_str(&mut p, r#""hello world""#).unwrap())
         );
 
         //
 
         let s = r#"(get-book :title "hello world" :version 1984)"#;
 
-        let d = ExprData::from_str(&Parser::new().config_read_number(true), s).unwrap();
+        let mut p = Parser::new().config_read_number(true);
+        let d = ExprData::from_str(&mut p, s).unwrap();
 
         assert_eq!(d.get_name(), "get-book");
         assert_eq!(
@@ -626,13 +623,13 @@ mod tests {
         //
 
         let s = r#"(rpc-call :version 1 :aa 2)"#;
-        let d = ExprData::from_str(&Default::default(), s);
+        let d = ExprData::from_str(&mut Default::default(), s);
         assert!(d.is_ok());
 
         // comment check
         let s = r#"(rpc-call :version 1 ;; comment
                      :aa 2)"#;
-        let d = ExprData::from_str(&Default::default(), s);
+        let d = ExprData::from_str(&mut Default::default(), s);
         assert!(d.is_ok());
         assert_eq!(
             d.unwrap().get("version"),
@@ -640,39 +637,39 @@ mod tests {
         );
 
         let s = r#"(rpc-call :version 1 ;; :aa 2)"#;
-        let d = ExprData::from_str(&Default::default(), s);
+        let d = ExprData::from_str(&mut Default::default(), s);
         assert!(d.is_err());
     }
 
     #[test]
     fn test_gen_data_from_multiple_exprs() {
         let mut parser = Parser::new();
+        parser.tokenize(&mut Cursor::new(
+            "(a :b \"c\" :c 123) (a :a '(1 2 3))".as_bytes(),
+        ));
 
-        let exprs = parser
-            .parse_root(&mut Cursor::new(
-                "(a :b \"c\" :c 123) (a :a '(1 2 3))".as_bytes(),
-            ))
-            .unwrap();
+        parser.parse().unwrap();
+        let exprs: Vec<_> = parser.iter_expr().collect();
 
         //dbg!(&exprs);
 
         let data = Data::from_expr(&exprs[0]);
         assert_eq!(
             data.unwrap(),
-            Data::from_str(&Default::default(), "(a :b \"c\" :c 123)").unwrap()
+            Data::from_str(&mut Default::default(), "(a :b \"c\" :c 123)").unwrap()
         );
 
         let data = Data::from_expr(&exprs[1]);
         assert_eq!(
             data.unwrap(),
-            Data::from_str(&Default::default(), "(a :a '(1 2 3))").unwrap()
+            Data::from_str(&mut Default::default(), "(a :a '(1 2 3))").unwrap()
         );
     }
 
     #[test]
     fn test_read_nest_data() {
         let s = r#"(get-book :title "hello world" :version "1984" :lang '(:lang "english" :encoding 77))"#;
-        let d = Data::from_str(&Default::default(), s).unwrap();
+        let d = Data::from_str(&mut Default::default(), s).unwrap();
         //dbg!(&d);
         assert!(matches!(d, Data::Data(_)));
 
@@ -704,7 +701,7 @@ mod tests {
 
         //
         let s = r#"(book-info :id "123" :title "hello world" :version "1984" :lang (language-perfer :lang "english"))"#;
-        let d = Data::from_str(&Default::default(), s).unwrap();
+        let d = Data::from_str(&mut Default::default(), s).unwrap();
 
         assert!(matches!(d, Data::Data(_)));
 
@@ -741,11 +738,11 @@ mod tests {
     fn test_read_data_from_str_nesty() {
         let s =
             r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4) :price 12.34)"#;
-        let p = Parser::new().config_read_number(true);
+        let mut p = Parser::new().config_read_number(true);
 
         //dbg!(p.parse_root(Cursor::new(s)));
 
-        let d = Data::from_str(&p, s).unwrap();
+        let d = Data::from_str(&mut p, s).unwrap();
 
         //dbg!(&d);
         assert_matches!(d, Data::Data(ExprData { .. }));
@@ -760,14 +757,14 @@ mod tests {
         assert_eq!(
             d.get("version"),
             Some(&Data::List(
-                ListData::from_str(&p, r#"'(1 2 3 4)"#).unwrap()
+                ListData::from_str(&mut p, r#"'(1 2 3 4)"#).unwrap()
             ))
         );
 
         assert_eq!(
             d.get("map"),
             Some(&Data::Map(
-                MapData::from_str(&p, r#"'(:a 2 :r 4)"#).unwrap()
+                MapData::from_str(&mut p, r#"'(:a 2 :r 4)"#).unwrap()
             ))
         );
 
@@ -786,9 +783,9 @@ mod tests {
 
     #[test]
     fn test_data_to_str() {
-        let p = Parser::new();
+        let mut p = Parser::new();
         let s = r#"(get-book :title "hello world" :version "1984")"#;
-        let d = ExprData::from_str(&p, s).unwrap();
+        let d = ExprData::from_str(&mut p, s).unwrap();
 
         assert_eq!(s, d.to_string());
 
@@ -806,9 +803,9 @@ mod tests {
 
     #[test]
     fn test_get_data() {
-        let p = Parser::new();
-        let e =
-            ExprData::from_str(&p, r#"(get-book :title "hello world" :version "1984")"#).unwrap();
+        let mut p = Parser::new();
+        let e = ExprData::from_str(&mut p, r#"(get-book :title "hello world" :version "1984")"#)
+            .unwrap();
 
         assert_eq!(
             e.get("title"),
@@ -818,9 +815,9 @@ mod tests {
 
     #[test]
     fn test_make_map_data() {
-        let p = Parser::new();
+        let mut p = Parser::new();
         let e = Data::from_str(
-            &p,
+            &mut p,
             r#"'(:title 'string :version 'string :lang 'language-perfer)"#,
         )
         .unwrap();
@@ -841,21 +838,21 @@ mod tests {
         //
 
         let e = Data::from_str(
-            &p,
+            &mut p,
             r#"'(:title 'string :vesion 'string :lang '(:lang 'string :encoding 'number))"#,
         )
         .unwrap();
         matches!(e, Data::Map(_));
         assert_eq!(
             e.get("lang"),
-            Some(&Data::from_str(&p, r#"'(:lang 'string :encoding 'number)"#,).unwrap())
+            Some(&Data::from_str(&mut p, r#"'(:lang 'string :encoding 'number)"#,).unwrap())
         );
 
         assert_eq!(
             e,
             Data::Map(
                 MapData::from_str(
-                    &p,
+                    &mut p,
                     r#"'(:title 'string :vesion 'string :lang '(:lang 'string :encoding 'number))"#,
                 )
                 .unwrap()

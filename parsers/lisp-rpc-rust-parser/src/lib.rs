@@ -235,6 +235,8 @@ pub struct Parser {
     read_number_config: bool,
 
     tokens: VecDeque<String>,
+
+    exprs: Vec<Expr>,
 }
 
 impl Default for Parser {
@@ -242,6 +244,7 @@ impl Default for Parser {
         Self {
             read_number_config: true,
             tokens: VecDeque::new(),
+            exprs: vec![],
         }
     }
 }
@@ -251,6 +254,7 @@ impl Parser {
         Self {
             read_number_config: true,
             tokens: VecDeque::new(),
+            exprs: vec![],
         }
     }
 
@@ -302,7 +306,8 @@ impl Parser {
         Ok(())
     }
 
-    pub fn parse_root(&mut self) -> Result<Vec<Expr>, ParserError> {
+    /// parse all tokens in parser to exprs
+    pub fn parse(&mut self) -> Result<(), ParserError> {
         let mut res = vec![];
 
         loop {
@@ -311,38 +316,70 @@ impl Parser {
                     "(" => {
                         res.push(self.read_exp()?);
                     }
+                    "'" => {
+                        res.push(self.read_quote()?);
+                    }
+                    "\"" => {
+                        res.push(self.read_string()?);
+                    }
+                    ":" => {
+                        res.push(self.read_keyword()?);
+                    }
+                    ";" => {
+                        res.push(self.read_comment()?);
+                    }
                     " " | "\n" => {
                         self.tokens.pop_front();
                     }
                     _ => {
-                        return {
-                            println!("{:?}", b);
-                            Err(ParserError::InvalidToken("in read_root"))
-                        };
+                        println!("{:?}", b);
+                        return Err(ParserError::InvalidToken("in read_root"));
                     }
                 },
                 None => break,
             }
         }
 
-        Ok(res)
+        self.exprs = res;
+        Ok(())
     }
 
-    pub fn parse_root_one(&mut self) -> Result<Expr, ParserError> {
+    /// only parse one expr from inner tokens
+    pub fn parse_one(&mut self) -> Result<(), ParserError> {
         loop {
             match self.tokens.front() {
                 Some(b) => match b.as_str() {
                     "(" => {
-                        return Ok(self.read_exp()?);
+                        let e = self.read_exp()?;
+                        self.exprs.push(e);
+                        return Ok(());
+                    }
+                    "'" => {
+                        let e = self.read_quote()?;
+                        self.exprs.push(e);
+                        return Ok(());
+                    }
+                    "\"" => {
+                        let e = self.read_string()?;
+                        self.exprs.push(e);
+                        return Ok(());
+                    }
+                    ":" => {
+                        let e = self.read_keyword()?;
+                        self.exprs.push(e);
+                        return Ok(());
+                    }
+                    ";" => {
+                        let e = self.read_comment()?;
+                        self.exprs.push(e);
+                        return Ok(());
                     }
                     " " | "\n" => {
                         self.tokens.pop_front();
                     }
                     _ => {
-                        return {
-                            println!("{:?}", b);
-                            Err(ParserError::InvalidToken("in read_root"))
-                        };
+                        println!("{:?}", b);
+                        return Err(ParserError::InvalidToken("in read_root"));
                     }
                 },
                 None => return Err(ParserError::InvalidToken("run out the tokens")),
@@ -505,6 +542,12 @@ impl Parser {
         } else {
             Ok(Expr::Comment(String::new()))
         }
+    }
+}
+
+impl Parser {
+    pub fn iter_expr(&self) -> impl Iterator<Item = &Expr> {
+        self.exprs.iter()
     }
 }
 
@@ -739,7 +782,9 @@ mod tests {
     #[test]
     fn test_read_string() {
         let mut parser = Parser::new();
-        parser.tokenize(Cursor::new(r#""hello""#.as_bytes())).unwrap();
+        parser
+            .tokenize(Cursor::new(r#""hello""#.as_bytes()))
+            .unwrap();
         assert_eq!(
             parser.read_string(),
             Ok(Expr::Atom(Atom::read_string("hello")))
@@ -771,7 +816,9 @@ mod tests {
             )))
         );
 
-        parser.tokenize(Cursor::new(r#"12344.22131"#.as_bytes())).unwrap();
+        parser
+            .tokenize(Cursor::new(r#"12344.22131"#.as_bytes()))
+            .unwrap();
 
         assert_eq!(
             parser.read_atom(),
@@ -785,7 +832,9 @@ mod tests {
     #[test]
     fn test_read_exp() {
         let mut parser = Parser::new().config_read_number(false);
-        parser.tokenize(Cursor::new("(a b c 123 c)".as_bytes())).unwrap();
+        parser
+            .tokenize(Cursor::new("(a b c 123 c)".as_bytes()))
+            .unwrap();
         assert_eq!(
             parser.read_exp(),
             Ok(Expr::List(
@@ -802,7 +851,9 @@ mod tests {
         assert!(parser.tokens.is_empty());
 
         //
-        parser.tokenize(Cursor::new("((a) b c 123 c)".as_bytes())).unwrap();
+        parser
+            .tokenize(Cursor::new("((a) b c 123 c)".as_bytes()))
+            .unwrap();
         assert_eq!(
             parser.read_exp(),
             Ok(Expr::List(
@@ -819,9 +870,11 @@ mod tests {
         assert!(parser.tokens.is_empty());
 
         //
-        parser.tokenize(Cursor::new(
-            r#"(def-msg language-perfer :lang 'string)"#.as_bytes(),
-        )).unwrap();
+        parser
+            .tokenize(Cursor::new(
+                r#"(def-msg language-perfer :lang 'string)"#.as_bytes(),
+            ))
+            .unwrap();
         assert_eq!(
             parser.read_exp(),
             Ok(Expr::List(
@@ -837,12 +890,14 @@ mod tests {
         assert!(parser.tokens.is_empty());
 
         //
-        parser.tokenize(Cursor::new(
-            r#"(def-rpc get-book
+        parser
+            .tokenize(Cursor::new(
+                r#"(def-rpc get-book
                      '(:title 'string :version 'string :lang 'language-perfer)
                     'book-info)"#
-                .as_bytes(),
-        )).unwrap();
+                    .as_bytes(),
+            ))
+            .unwrap();
         assert_eq!(
             parser.read_exp(),
             Ok(Expr::List(
@@ -868,10 +923,11 @@ mod tests {
         assert!(parser.tokens.is_empty());
 
         //
-        parser.tokenize(Cursor::new(
-            r#"(get-book :title "hello world" :version "1984")"#
-                .as_bytes(),
-        )).unwrap();
+        parser
+            .tokenize(Cursor::new(
+                r#"(get-book :title "hello world" :version "1984")"#.as_bytes(),
+            ))
+            .unwrap();
 
         assert_eq!(
             parser.read_exp(),
@@ -887,10 +943,11 @@ mod tests {
             ),)
         );
 
-        parser.tokenize(Cursor::new(
-            r#"(get-book :title "hello \"world" :version "1984")"#
-                .as_bytes(),
-        )).unwrap();
+        parser
+            .tokenize(Cursor::new(
+                r#"(get-book :title "hello \"world" :version "1984")"#.as_bytes(),
+            ))
+            .unwrap();
 
         assert_eq!(
             parser.read_exp(),
@@ -910,10 +967,11 @@ mod tests {
 
         let mut parser = Parser::new().config_read_number(true);
 
-        parser.tokenize(Cursor::new(
-            r#"(get-book :title "hello world" :id 1984)"#
-                .as_bytes(),
-        )).unwrap();
+        parser
+            .tokenize(Cursor::new(
+                r#"(get-book :title "hello world" :id 1984)"#.as_bytes(),
+            ))
+            .unwrap();
 
         assert_eq!(
             parser.read_exp(),
@@ -934,18 +992,22 @@ mod tests {
     fn test_read_comment() {
         let mut parser = Parser::new();
 
-        parser.tokenize(Cursor::new(r#";; comment "#.as_bytes())).unwrap();
+        parser
+            .tokenize(Cursor::new(r#";; comment "#.as_bytes()))
+            .unwrap();
 
         assert_eq!(
             parser.read_comment(),
             Ok(Expr::Comment("comment".to_string()))
         );
 
-        parser.tokenize(Cursor::new(
-            r#";; comment
+        parser
+            .tokenize(Cursor::new(
+                r#";; comment
                  ddddd "#
-                .as_bytes(),
-        )).unwrap();
+                    .as_bytes(),
+            ))
+            .unwrap();
 
         assert_eq!(
             parser.read_comment(),
@@ -957,8 +1019,11 @@ mod tests {
     fn test_read_root() {
         let mut parser = Parser::new();
 
-        parser.tokenize(Cursor::new("(a b c 123 c) (a '(1 2 3))".as_bytes())).unwrap();
-        let expr = parser.parse_root().unwrap();
+        parser
+            .tokenize(Cursor::new("(a b c 123 c) (a '(1 2 3))".as_bytes()))
+            .unwrap();
+        parser.parse().unwrap();
+        let expr = parser.exprs.clone();
         assert_eq!(
             expr,
             vec![
@@ -980,8 +1045,12 @@ mod tests {
             ],
         );
 
-        parser.tokenize(Cursor::new(r#"('a "hello")"#.as_bytes())).unwrap();
-        let expr = parser.parse_root().unwrap();
+        parser
+            .tokenize(Cursor::new(r#"('a "hello")"#.as_bytes()))
+            .unwrap();
+
+        parser.parse().unwrap();
+        let expr = parser.exprs.clone();
         assert_eq!(
             expr,
             vec![Expr::List(vec![
@@ -1016,11 +1085,9 @@ mod tests {
         let expr1 = parser1.read_exp().unwrap();
 
         parser.tokenize(t).unwrap();
-        let expr = parser.parse_root().unwrap();
-        assert_eq!(
-            expr,
-            vec![expr0, expr1]
-        );
+        parser.parse().unwrap();
+        let expr = parser.exprs.clone();
+        assert_eq!(expr, vec![expr0, expr1]);
     }
 
     #[test]
@@ -1035,14 +1102,28 @@ mod tests {
                 .as_bytes(),
         );
         parser.tokenize(t).unwrap();
-        let expr = parser.parse_root_one().unwrap();
+        parser.parse_one().unwrap();
+        let expr = parser.exprs.clone();
 
         let s0 = Cursor::new(r#"(def-msg language-perfer :lang 'string)"#.as_bytes());
         let mut parser2 = Parser::new();
         parser2.tokenize(s0).unwrap();
         let expr0 = parser2.read_exp().unwrap();
 
-        assert_eq!(expr, expr0);
+        assert_eq!(expr[0], expr0);
+    }
+
+    #[test]
+    fn test_read_root_one_not_expr_data() {
+        let mut parser = Parser::new();
+        let t = Cursor::new(r#":lang "string""#.as_bytes());
+        parser.tokenize(t).unwrap();
+
+        parser.parse_one().unwrap();
+        assert_eq!(parser.exprs[0], Expr::Atom(Atom::read_keyword("lang")));
+
+        parser.parse_one().unwrap();
+        assert_eq!(parser.exprs[1], Expr::Atom(Atom::read_string("string")));
     }
 
     #[test]
@@ -1057,7 +1138,8 @@ mod tests {
                 .as_bytes(),
         );
         parser.tokenize(t).unwrap();
-        let expr = parser.parse_root().unwrap();
+        parser.parse().unwrap();
+        let expr = parser.exprs;
 
         assert_eq!(
             expr.into_iter().map(|e|e.into_tokens()).collect::<Vec<String>>(),

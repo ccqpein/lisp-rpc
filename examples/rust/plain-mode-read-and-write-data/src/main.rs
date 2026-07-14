@@ -34,7 +34,7 @@ fn main() {
 
     // server side
     // server can parse the data send from client and return the response
-    let client_request_data = match Data::from_str(&Default::default(), &raw_data).unwrap() {
+    let client_request_data = match Data::from_str(&mut Default::default(), &raw_data).unwrap() {
         Data::Data(expr_data) => expr_data, // root data has to be Expr data
         _ => panic!(),
     };
@@ -55,7 +55,7 @@ fn main() {
 
     // server side for some reason want to format str to send data
     let server_response_data = Data::from_str(
-        &Parser::new().config_read_number(true),
+        &mut Parser::new().config_read_number(true),
         &format!("(response :args '(1 2) :result {})", version_v + aa_v),
     )
     .unwrap();

@@ -75,9 +75,10 @@ impl DefMsg {
             None => Default::default(),
         };
 
-        let expr = p.parse_root_one(Cursor::new(source))?;
+        p.tokenize(Cursor::new(source))?;
+        p.parse_one()?;
 
-        Self::from_expr(&expr)
+        Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }
 
     pub fn if_def_msg_expr(expr: &Expr) -> bool {
