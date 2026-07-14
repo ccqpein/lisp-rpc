@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use lisp_rpc_rust_generator::*;
-use tracing::error;
 use rust_embed::Embed;
 use std::fs::{self, File};
 use std::io;
 use std::path::PathBuf;
+use tracing::error;
 
 #[derive(Embed)]
 #[folder = "templates/"]
@@ -26,13 +26,13 @@ struct Args {
 
 fn parse_spec_file(file: File) -> Result<SpecFile> {
     let mut parser: lisp_rpc_rust_parser::Parser = Default::default();
-
-    let exprs = parser
-        .parse_root(file)
+    parser.tokenize(file)?;
+    parser
+        .parse()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let mut specs = SpecFile::new();
-    for expr in &exprs {
+    for expr in parser.iter_expr() {
         if DefRPC::if_def_rpc_expr(expr) {
             specs.record_one(Box::new(DefRPC::from_expr(expr)?))?;
         } else if DefMsg::if_def_msg_expr(expr) {
