@@ -73,6 +73,7 @@ Use =def-msg= to define reusable data structures.
 - Types can be other defined messages.
 - Types can be nested lists: =(list 'type)=.
 - Types can be nested maps: ='(:k1 'type1 :k2 'type2)=. Anonymous maps MUST be quoted.
+- Types can be optional: =(optional 'type)=.
 
 Examples:
 #+begin_src lisp
@@ -82,6 +83,7 @@ Examples:
 
   (def-msg user
     :id 'number ;; or 'int, if it is float, use 'float
+    :middle-name (optional 'string)
     :meta '(:created-at 'string :active 'boolean)) ;; Quoted map schema
 #+end_src
 
@@ -96,7 +98,7 @@ Use =def-rpc= to define a remote procedure, specifying its input schema and outp
 Example:
 #+begin_src lisp
   (def-rpc get-book
-      '(:title 'string :version 'string
+      '(:title 'string :version (optional 'string)
         :lang '(:lang 'string :encoding 'number)
         :authors 'author-list)
     'book-info)
@@ -110,5 +112,7 @@ Example:
      - Types in =def-msg= are typically quoted symbols (e.g., ='string=).
      - Anonymous maps in =def-msg= or =def-rpc= can be quoted or unquoted (depending on implementation, but consistent quoting is recommended).
      - Lists in =def-msg= use the =(list 'type)= constructor.
+     - Optional types in =def-msg= use the =(optional 'type)= constructor.
 3. *Uniqueness*: Keyword names within a single Data or Map structure must be unique.
 4. *Symbols*: Use quoted symbols for type references to avoid evaluation errors in dynamic environments.
+
