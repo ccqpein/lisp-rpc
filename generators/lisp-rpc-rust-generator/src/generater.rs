@@ -155,6 +155,7 @@ mod tests {
             fields: vec![
                 GeneratedField::new("a".to_string(), "String".to_string(), None).unwrap(),
                 GeneratedField::new("a".to_string(), "i64".to_string(), None).unwrap(),
+                GeneratedField::new("a".to_string(), "OtherType".to_string(), None).unwrap(),
             ],
             comment: None,
             data_name: "name".to_string(),
@@ -171,6 +172,7 @@ mod tests {
 pub struct name {
     pub a: String,
     pub a: i64,
+    pub a: OtherType,
 }"#
         );
 

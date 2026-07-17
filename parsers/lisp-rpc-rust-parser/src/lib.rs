@@ -29,6 +29,22 @@ pub enum TypeValueNumber {
     Float(f64),
 }
 
+impl TypeValueNumber {
+    pub fn to_int(&self) -> Option<i64> {
+        match self {
+            TypeValueNumber::Int(i) => Some(*i),
+            TypeValueNumber::Float(_) => None,
+        }
+    }
+
+    pub fn to_float(&self) -> Option<f64> {
+        match self {
+            TypeValueNumber::Float(f) => Some(*f),
+            TypeValueNumber::Int(i) => Some(*i as f64),
+        }
+    }
+}
+
 impl PartialEq for TypeValueNumber {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -103,7 +119,7 @@ impl TypeValue {
     pub fn to_string(&self) -> String {
         match self {
             TypeValue::Symbol(s) => s.clone(),
-            TypeValue::String(s) => format!("\"{}\"", s),
+            TypeValue::String(s) => s.to_string(),
             TypeValue::Keyword(s) => format!(":{}", s),
             TypeValue::Number(d) => d.to_string(),
         }
@@ -116,6 +132,20 @@ impl TypeValue {
             )))
         } else {
             Ok(Self::Symbol(s.to_string()))
+        }
+    }
+
+    pub fn to_int(&self) -> Option<i64> {
+        match self {
+            TypeValue::Number(type_value_number) => type_value_number.to_int(),
+            _ => None,
+        }
+    }
+
+    pub fn to_float(&self) -> Option<f64> {
+        match self {
+            TypeValue::Number(type_value_number) => type_value_number.to_float(),
+            _ => None,
         }
     }
 }
@@ -581,6 +611,28 @@ mod tests {
             TypeValueNumber::Float(1.5) + TypeValueNumber::Float(2.5),
             TypeValueNumber::Float(4.0)
         );
+    }
+
+    #[test]
+    fn test_to_int_and_to_float() {
+        let int_val = TypeValueNumber::Int(42);
+        let float_val = TypeValueNumber::Float(3.14);
+
+        assert_eq!(int_val.to_int(), Some(42));
+        assert_eq!(int_val.to_float(), None);
+        assert_eq!(float_val.to_int(), None);
+        assert_eq!(float_val.to_float(), Some(3.14));
+
+        let int_tv = TypeValue::Number(int_val);
+        let float_tv = TypeValue::Number(float_val);
+        let sym_tv = TypeValue::Symbol("foo".to_string());
+
+        assert_eq!(int_tv.to_int(), Some(42));
+        assert_eq!(int_tv.to_float(), None);
+        assert_eq!(float_tv.to_int(), None);
+        assert_eq!(float_tv.to_float(), Some(3.14));
+        assert_eq!(sym_tv.to_int(), None);
+        assert_eq!(sym_tv.to_float(), None);
     }
 
     #[test]

@@ -102,8 +102,10 @@ impl Data {
                                 ..
                             }) => Ok(Self::Map(MapData::from_expr(e)?)),
 
-                            // List data
-                            Expr::Atom(Atom { .. }) => Ok(Self::List(ListData::from_expr(e)?)),
+                            // List data, list of atom or list of other expr data
+                            Expr::Atom(Atom { .. }) | Expr::List(_) => {
+                                Ok(Self::List(ListData::from_expr(e)?))
+                            }
 
                             _ => Err(anyhow!(DataError {
                                 msg: format!("cannot generate Data from the expr {:?}", e),
@@ -184,6 +186,24 @@ impl Data {
             },
             e @ Err(_) => e,
         }
+    }
+
+    /// Get the TypeValue from Data
+    pub fn as_value(&self) -> Option<&TypeValue> {
+        match self {
+            Data::Value(type_value) => Some(type_value),
+            _ => None,
+        }
+    }
+
+    /// Get the TypeValue::Number i64
+    pub fn to_int(&self) -> Option<i64> {
+        self.as_value().map_or(None, |tv| tv.to_int())
+    }
+
+    /// Get the TypeValue::Number f64
+    pub fn to_float(&self) -> Option<f64> {
+        self.as_value().map_or(None, |tv| tv.to_float())
     }
 }
 
@@ -340,6 +360,28 @@ impl GetAbleData for ExprData {
     }
 }
 
+impl<'a> IntoIterator for &'a ExprData {
+    type Item = <&'a HashMap<String, Data> as IntoIterator>::Item;
+
+    type IntoIter = <&'a HashMap<String, Data> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner_map
+            .get_or_init(|| DataMap::new(&self.rest_args).unwrap())
+            .into_iter()
+    }
+}
+
+impl IntoIterator for ExprData {
+    type Item = <HashMap<String, Data> as IntoIterator>::Item;
+
+    type IntoIter = <HashMap<String, Data> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner_map.into_inner().unwrap().into_iter()
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ListData {
     inner_data: Vec<Data>,
@@ -392,6 +434,26 @@ impl ListData {
             "'({})",
             self.inner_data.iter().map(|d| d.to_string()).join(" ")
         )
+    }
+}
+
+impl<'a> IntoIterator for &'a ListData {
+    type Item = &'a Data;
+
+    type IntoIter = <&'a Vec<Data> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.inner_data).into_iter()
+    }
+}
+
+impl IntoIterator for ListData {
+    type Item = Data;
+
+    type IntoIter = <Vec<Data> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner_data.into_iter()
     }
 }
 
@@ -500,6 +562,25 @@ impl GetAbleData for MapData {
     }
 }
 
+impl<'a> IntoIterator for &'a MapData {
+    type Item = <&'a HashMap<String, Data> as IntoIterator>::Item;
+
+    type IntoIter = <&'a HashMap<String, Data> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.map).into_iter()
+    }
+}
+
+impl IntoIterator for MapData {
+    type Item = <HashMap<String, Data> as IntoIterator>::Item;
+
+    type IntoIter = <HashMap<String, Data> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.into_iter()
+    }
+}
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct DataMap {
     hash_map: HashMap<String, Data>,
@@ -582,6 +663,26 @@ impl FromIterator<(String, Data)> for DataMap {
         Self {
             hash_map: iter.into_iter().collect(),
         }
+    }
+}
+
+impl<'a> IntoIterator for &'a DataMap {
+    type Item = <&'a HashMap<String, Data> as IntoIterator>::Item;
+
+    type IntoIter = <&'a HashMap<String, Data> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.hash_map.iter()
+    }
+}
+
+impl IntoIterator for DataMap {
+    type Item = <HashMap<String, Data> as IntoIterator>::Item;
+
+    type IntoIter = <HashMap<String, Data> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.hash_map.into_iter()
     }
 }
 

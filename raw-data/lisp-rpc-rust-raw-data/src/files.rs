@@ -7,9 +7,6 @@ use crate::{Data, ExprData};
 pub struct DataFile {
     /// all data (expr data) in this file
     datas: Vec<ExprData>,
-
-    /// the table that store the data (expr data), name to value
-    data_tables: HashMap<String, ExprData>,
 }
 
 impl DataFile {
@@ -29,14 +26,42 @@ impl DataFile {
                 anyhow::bail!("File can only contains the expr data")
             };
 
-            df.datas.push(d.clone());
-            df.data_tables.insert(d.get_name().to_string(), d);
+            df.datas.push(d);
         }
 
         Ok(df)
     }
 
-    pub fn get_data(&self, k: &str) -> Option<&ExprData> {
-        self.data_tables.get(k)
+    /// generate the table of this file, name -> expr data
+    /// caution: cannot support the multiple same name data
+    pub fn gen_table(&self) -> HashMap<String, &ExprData> {
+        self.datas
+            .iter()
+            .map(|e| (e.get_name().to_string(), e))
+            .collect()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ExprData> {
+        self.into_iter()
+    }
+}
+
+impl<'e> IntoIterator for &'e DataFile {
+    type Item = &'e ExprData;
+
+    type IntoIter = std::slice::Iter<'e, ExprData>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.datas.iter()
+    }
+}
+
+impl<'e> IntoIterator for DataFile {
+    type Item = ExprData;
+
+    type IntoIter = std::vec::IntoIter<ExprData>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.datas.into_iter()
     }
 }
