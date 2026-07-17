@@ -208,6 +208,22 @@ impl DefRPC {
                                 None,
                             )?);
                         }
+                        // optional type, the first ele is "optional"
+                        (
+                            Expr::Atom(Atom {
+                                value: TypeValue::Symbol(o),
+                            }),
+                            Expr::Quote(box Expr::Atom(Atom {
+                                value: TypeValue::Symbol(t),
+                            })),
+                        ) if o == "optional" => {
+                            let new_type_name = format!("Option<{}>", type_translate(t));
+                            fields.push(GeneratedField::new(
+                                kebab_to_snake_case(f),
+                                new_type_name,
+                                None,
+                            )?);
+                        }
                         _ => {
                             anyhow::bail!(DefRPCError {
                                 msg:
@@ -416,7 +432,7 @@ mod tests {
         );
 
         let spec = r#"(def-rpc get-book
-      (:title 'string :version 'string :lang (:lang 'string :encoding 'number))
+      '(:title 'string :version 'string :lang '(:lang 'string :encoding 'number))
     'book-info)"#;
 
         let dr = DefRPC::from_str(spec, None).unwrap();
@@ -461,7 +477,7 @@ mod tests {
     'book-info)"#;
         let dm = DefRPC::from_str(case, Default::default()).unwrap();
 
-        //dbg!(dm.gen_code_with_file(&template_file_path).unwrap());
+        //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
 
         assert_eq!(
             dm.gen_code_with_files(&template_file_path).unwrap(),
@@ -483,6 +499,43 @@ pub struct GetBook {
 impl_to_rpc!(GetBook, RPCType::RPC("get-book".to_string()));"#
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_gen_code_special_type() -> Result<()> {
+        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let template_file_path = vec![
+            project_root.join("templates/def_struct.rs.template"),
+            project_root.join("templates/rpc_impl.template"),
+        ];
+
+        let case = r#"(def-rpc get-book
+      '(:title 'string :version (optional 'string) :lang '(:lang 'string :encoding (optional 'number) :pages (list 'float)))
+    'book-info)"#;
+        let dm = DefRPC::from_str(case, Default::default()).unwrap();
+
+        //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
+        assert_eq!(
+            dm.gen_code_with_files(&template_file_path).unwrap(),
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct GetBookLang {
+    pub lang: String,
+    pub encoding: Option<i64>,
+    pub pages: Vec<f64>,
+}
+
+impl_to_rpc!(GetBookLang, RPCType::Map);
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct GetBook {
+    pub title: String,
+    pub version: Option<String>,
+    pub lang: GetBookLang,
+}
+
+impl_to_rpc!(GetBook, RPCType::RPC("get-book".to_string()));"#
+        );
         Ok(())
     }
 }

@@ -195,6 +195,22 @@ impl DefMsg {
                                 None,
                             )?);
                         }
+                        // optional type, the first ele is "optional"
+                        (
+                            Expr::Atom(Atom {
+                                value: TypeValue::Symbol(o),
+                            }),
+                            Expr::Quote(box Expr::Atom(Atom {
+                                value: TypeValue::Symbol(t),
+                            })),
+                        ) if o == "optional" => {
+                            let new_type_name = format!("Option<{}>", type_translate(t));
+                            fields.push(GeneratedField::new(
+                                kebab_to_snake_case(f),
+                                new_type_name,
+                                None,
+                            )?);
+                        }
                         _ => {
                             anyhow::bail!(DefMsgError {
                                 msg:
@@ -472,19 +488,6 @@ mod tests {
             project_root.join("templates/rpc_impl.template"),
         ];
 
-        let case = r#"(def-msg authors :names (list 'string))"#;
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-        dbg!(&dm);
-        assert_eq!(
-            dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct Authors {
-    pub names: Vec<String>,
-}
-
-impl_to_rpc!(Authors, RPCType::Msg("authors".to_string()));"#
-        );
-
         let case = r#"(def-msg language-perfer :lang 'string)"#;
         let dm = DefMsg::from_str(case, Default::default()).unwrap();
         //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
@@ -542,6 +545,54 @@ pub struct BookInfo {
 }
 
 impl_to_rpc!(BookInfo, RPCType::Msg("book-info".to_string()));"#
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_gen_code_list() -> Result<()> {
+        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let template_file_path = vec![
+            project_root.join("templates/def_struct.rs.template"),
+            project_root.join("templates/rpc_impl.template"),
+        ];
+
+        let case = r#"(def-msg authors :names (list 'string))"#;
+        let dm = DefMsg::from_str(case, Default::default()).unwrap();
+        //dbg!(&dm);
+        assert_eq!(
+            dm.gen_code_with_files(&template_file_path).unwrap(),
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct Authors {
+    pub names: Vec<String>,
+}
+
+impl_to_rpc!(Authors, RPCType::Msg("authors".to_string()));"#
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_gen_code_optional() -> Result<()> {
+        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let template_file_path = vec![
+            project_root.join("templates/def_struct.rs.template"),
+            project_root.join("templates/rpc_impl.template"),
+        ];
+
+        let case = r#"(def-msg authors :names (optional 'string))"#;
+        let dm = DefMsg::from_str(case, Default::default()).unwrap();
+        //dbg!(&dm);
+        assert_eq!(
+            dm.gen_code_with_files(&template_file_path).unwrap(),
+            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct Authors {
+    pub names: Option<String>,
+}
+
+impl_to_rpc!(Authors, RPCType::Msg("authors".to_string()));"#
         );
 
         Ok(())
