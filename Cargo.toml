@@ -35,7 +35,7 @@ codegen-units = 1
 panic = "abort"
 
 [workspace.dependencies]
-lisp-rpc-rust-parser = { version = "0.1.5", path = "parsers/lisp-rpc-rust-parser" }
+lisp-rpc-rust-parser = { version = "0.1.6", path = "parsers/lisp-rpc-rust-parser" }
 lisp-rpc-rust-generator = { version = "0.1.5", path = "generators/lisp-rpc-rust-generator" }
 lisp-rpc-rust-serializer = { version = "0.1.1", path = "serializer" }
 lisp-rpc-rust-server = { version = "0.1.2", path = "server" }
