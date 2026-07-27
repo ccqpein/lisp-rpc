@@ -1,6 +1,4 @@
-#[cfg(test)]
 use lisp_rpc_rust_parser::Parser;
-#[cfg(test)]
 use std::io::Cursor;
 
 use std::error::Error;
@@ -31,18 +29,17 @@ impl Error for DefRPCError {}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DefRPC {
-    rpc_name: String,
+    pub rpc_name: String,
 
     /// the keywords and their types pairs of request body
-    args: Vec<Expr>,
+    pub args: Vec<Expr>,
 
     ///
-    return_value: Option<String>,
+    pub return_value: Option<String>,
 }
 
 impl DefRPC {
-    #[cfg(test)]
-    fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
+    pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         let mut p = match parser {
             Some(p) => p,
             None => Default::default(),
@@ -255,8 +252,7 @@ impl DefRPC {
         Ok(res)
     }
 
-    #[cfg(test)]
-    fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
+    pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
             bucket.push(s.gen_code_with_files(template_files)?);
@@ -266,8 +262,7 @@ impl DefRPC {
     }
 
     /// Generate code with the exist tera instance
-    #[cfg(test)]
-    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+    pub fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
             bucket.push(s.gen_code_with_tera(templates)?);
@@ -304,238 +299,4 @@ fn de_quoted(e: &Expr) -> &Expr {
     }
 }
 
-#[cfg(test)]
-mod tests {
 
-    use std::path::PathBuf;
-
-    use super::*;
-
-    #[test]
-    fn test_parse_def_rpc() -> Result<()> {
-        let case = r#"(def-rpc get-book
-      '(:title 'string :version 'string :lang 'language-perfer)
-    'book-info)"#;
-        let dr = DefRPC::from_str(case, Default::default()).unwrap();
-
-        assert_eq!(
-            dr,
-            DefRPC {
-                rpc_name: "get-book".to_string(),
-                args: vec![
-                    Expr::Atom(Atom::read_keyword("title")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("string")))),
-                    Expr::Atom(Atom::read_keyword("version")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("string")))),
-                    Expr::Atom(Atom::read_keyword("lang")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("language-perfer")))),
-                ],
-                return_value: Some("book-info".to_string())
-            }
-        );
-
-        let case = r#"(def-rpc get-book
-      '(:title 'string :version 'string :lang '(:lang 'string :encoding 'number))
-    'book-info)"#;
-        let dr = DefRPC::from_str(case, Default::default()).unwrap();
-
-        assert_eq!(
-            dr,
-            DefRPC {
-                rpc_name: "get-book".to_string(),
-                args: vec![
-                    Expr::Atom(Atom::read_keyword("title")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("string")))),
-                    Expr::Atom(Atom::read_keyword("version")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("string")))),
-                    Expr::Atom(Atom::read_keyword("lang")),
-                    Expr::Quote(Box::new(Expr::List(vec![
-                        Expr::Atom(Atom::read_keyword("lang")),
-                        Expr::Quote(Box::new(Expr::Atom(Atom::read("string")))),
-                        Expr::Atom(Atom::read_keyword("encoding")),
-                        Expr::Quote(Box::new(Expr::Atom(Atom::read("number")))),
-                    ]))),
-                ],
-                return_value: Some("book-info".to_string())
-            }
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_create_gen_structs() -> Result<()> {
-        let case = r#"(def-rpc get-book
-      '(:title 'string :version 'string :lang 'language-perfer)
-    'book-info)"#;
-        let dr = DefRPC::from_str(case, Default::default()).unwrap();
-        assert_eq!(
-            dr.create_gen_structs().unwrap(),
-            vec![GeneratedStruct::new(
-                "get-book",
-                vec![
-                    GeneratedField::new("title".to_string(), "String".to_string(), None)?,
-                    GeneratedField::new("version".to_string(), "String".to_string(), None)?,
-                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None)?,
-                ],
-                None,
-                RPCDataType::Rpc,
-            ),]
-        );
-
-        let case = r#"(def-rpc get-book
-      (:title 'string :version-aaa 'string :lang 'language-perfer)
-    'book-info)"#;
-        let dr = DefRPC::from_str(case, Default::default()).unwrap();
-        assert_eq!(
-            dr.create_gen_structs().unwrap(),
-            vec![GeneratedStruct::new(
-                "get-book",
-                vec![
-                    GeneratedField::new("title".to_string(), "String".to_string(), None)?,
-                    GeneratedField::new("version_aaa".to_string(), "String".to_string(), None)?,
-                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None)?,
-                ],
-                None,
-                RPCDataType::Rpc,
-            ),]
-        );
-
-        let spec = r#"(def-rpc get-book
-      '(:title 'string :version 'string :lang '(:lang 'string :encoding 'number))
-    'book-info)"#;
-
-        let dr = DefRPC::from_str(spec, None).unwrap();
-        assert_eq!(
-            dr.create_gen_structs().unwrap(),
-            vec![
-                GeneratedStruct::new(
-                    "get-book-lang",
-                    vec![
-                        GeneratedField::new("lang".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("encoding".to_string(), "i64".to_string(), None)?,
-                    ],
-                    None,
-                    RPCDataType::Map,
-                ),
-                GeneratedStruct::new(
-                    "get-book",
-                    vec![
-                        GeneratedField::new("title".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("version".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("lang".to_string(), "GetBookLang".to_string(), None)?,
-                    ],
-                    None,
-                    RPCDataType::Rpc,
-                ),
-            ]
-        );
-
-        let spec = r#"(def-rpc get-book
-      '(:title 'string :version 'string :lang '(:lang 'string :encoding 'number))
-    'book-info)"#;
-
-        let dr = DefRPC::from_str(spec, None).unwrap();
-        assert_eq!(
-            dr.create_gen_structs().unwrap(),
-            vec![
-                GeneratedStruct::new(
-                    "get-book-lang",
-                    vec![
-                        GeneratedField::new("lang".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("encoding".to_string(), "i64".to_string(), None)?,
-                    ],
-                    None,
-                    RPCDataType::Map,
-                ),
-                GeneratedStruct::new(
-                    "get-book",
-                    vec![
-                        GeneratedField::new("title".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("version".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("lang".to_string(), "GetBookLang".to_string(), None)?,
-                    ],
-                    None,
-                    RPCDataType::Rpc,
-                ),
-            ]
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_gen_code() -> Result<()> {
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let template_file_path = vec![
-            project_root.join("templates/def_struct.rs.template"),
-            project_root.join("templates/rpc_impl.template"),
-        ];
-
-        let case = r#"(def-rpc get-book
-      '(:title 'string :version 'string :lang '(:lang 'string :encoding 'number))
-    'book-info)"#;
-        let dm = DefRPC::from_str(case, Default::default()).unwrap();
-
-        //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
-
-        assert_eq!(
-            dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct GetBookLang {
-    pub lang: String,
-    pub encoding: i64,
-}
-
-impl_to_rpc!(GetBookLang, RPCType::Map);
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct GetBook {
-    pub title: String,
-    pub version: String,
-    pub lang: GetBookLang,
-}
-
-impl_to_rpc!(GetBook, RPCType::RPC("get-book".to_string()));"#
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_gen_code_special_type() -> Result<()> {
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let template_file_path = vec![
-            project_root.join("templates/def_struct.rs.template"),
-            project_root.join("templates/rpc_impl.template"),
-        ];
-
-        let case = r#"(def-rpc get-book
-      '(:title 'string :version (optional 'string) :lang '(:lang 'string :encoding (optional 'number) :pages (list 'float)))
-    'book-info)"#;
-        let dm = DefRPC::from_str(case, Default::default()).unwrap();
-
-        //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
-        assert_eq!(
-            dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct GetBookLang {
-    pub lang: String,
-    pub encoding: Option<i64>,
-    pub pages: Vec<f64>,
-}
-
-impl_to_rpc!(GetBookLang, RPCType::Map);
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct GetBook {
-    pub title: String,
-    pub version: Option<String>,
-    pub lang: GetBookLang,
-}
-
-impl_to_rpc!(GetBook, RPCType::RPC("get-book".to_string()));"#
-        );
-        Ok(())
-    }
-}

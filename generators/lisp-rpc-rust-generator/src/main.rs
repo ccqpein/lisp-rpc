@@ -42,7 +42,7 @@ fn parse_spec_file(file: File) -> Result<SpecFile> {
             let x = DefPkg::from_expr(expr)?;
             specs.set_target_pkg_name(x.symbol_name());
             specs.record_one(Box::new(x))?
-        } else {
+        } else if !expr.is_comment() {
             anyhow::bail!("unknown expr: {expr}");
         }
     }
