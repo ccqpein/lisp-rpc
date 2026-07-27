@@ -3,7 +3,6 @@
 use std::error::Error;
 
 use anyhow::Result;
-#[cfg(test)]
 use lisp_rpc_rust_parser::Parser;
 use lisp_rpc_rust_parser::{Atom, Expr, TypeValue};
 
@@ -66,8 +65,7 @@ impl DefMsg {
     }
 
     /// make new def msg from str
-    #[cfg(test)]
-    fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
+    pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         use std::io::Cursor;
 
         let mut p = match parser {
@@ -242,8 +240,7 @@ impl DefMsg {
         Ok(res)
     }
 
-    #[cfg(test)]
-    fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
+    pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
             bucket.push(s.gen_code_with_files(template_files)?);
@@ -253,8 +250,7 @@ impl DefMsg {
     }
 
     /// Generate code with the exist tera instance
-    #[cfg(test)]
-    fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+    pub fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
             bucket.push(s.gen_code_with_tera(templates)?);
@@ -281,320 +277,5 @@ impl RPCSpec for DefMsg {
 impl RPCSpecLib for DefMsg {
     fn generate_structs(&self) -> Result<Vec<GeneratedStruct>> {
         self.create_gen_structs()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::*;
-    use lisp_rpc_rust_parser::Expr;
-
-    #[test]
-    fn test_parse_def_msg() -> Result<()> {
-        let case = r#"(def-msg language-perfer :lang 'string)"#;
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-
-        assert_eq!(
-            dm,
-            DefMsg {
-                msg_name: "language-perfer".to_string(),
-                rest_expr: vec![
-                    Expr::Atom(Atom::read_keyword("lang")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("string"))))
-                ],
-                msg_ty: RPCDataType::Msg
-            }
-        );
-
-        // test the dirty string
-        let case = r#"  (def-msg language-perfer :lang 'string) (additional)"#;
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-
-        assert_eq!(
-            dm,
-            DefMsg {
-                msg_name: "language-perfer".to_string(),
-                rest_expr: vec![
-                    Expr::Atom(Atom::read_keyword("lang")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("string"))))
-                ],
-                msg_ty: RPCDataType::Msg,
-            }
-        );
-
-        // test the multiple keywords
-        let case = r#"(def-msg language-perfer :lang 'string :version 'number)"#;
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-
-        assert_eq!(
-            dm,
-            DefMsg {
-                msg_name: "language-perfer".to_string(),
-                rest_expr: vec![
-                    Expr::Atom(Atom::read_keyword("lang")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("string")))),
-                    Expr::Atom(Atom::read_keyword("version")),
-                    Expr::Quote(Box::new(Expr::Atom(Atom::read("number"))))
-                ],
-                msg_ty: RPCDataType::Msg,
-            }
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_create_gen_structs() -> Result<()> {
-        let spec = r#"(def-msg book-info
-    :lang 'language-perfer
-    :title 'string
-    :version 'string
-    :id 'string)"#;
-
-        let x = DefMsg::from_str(spec, None).unwrap();
-        assert_eq!(
-            x.create_gen_structs().unwrap(),
-            vec![GeneratedStruct::new(
-                "book-info",
-                vec![
-                    GeneratedField::new("lang".to_string(), "LanguagePerfer".to_string(), None)?,
-                    GeneratedField::new("title".to_string(), "String".to_string(), None)?,
-                    GeneratedField::new("version".to_string(), "String".to_string(), None)?,
-                    GeneratedField::new("id".to_string(), "String".to_string(), None)?,
-                ],
-                None,
-                RPCDataType::Msg,
-            ),],
-        );
-
-        // anonymous fields
-
-        let spec = r#"(def-msg book-info
-    :lang '(:a 'string :b 'number)
-    :title 'string
-    :version 'string
-    :id 'string)"#;
-
-        let x = DefMsg::from_str(spec, None).unwrap();
-        assert_eq!(
-            x.create_gen_structs().unwrap(),
-            vec![
-                GeneratedStruct::new(
-                    "book-info-lang",
-                    vec![
-                        GeneratedField::new("a".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("b".to_string(), "i64".to_string(), None)?,
-                    ],
-                    None,
-                    RPCDataType::Map,
-                ),
-                GeneratedStruct::new(
-                    "book-info",
-                    vec![
-                        GeneratedField::new("lang".to_string(), "BookInfoLang".to_string(), None)?,
-                        GeneratedField::new("title".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("version".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("id".to_string(), "String".to_string(), None)?,
-                    ],
-                    None,
-                    RPCDataType::Msg,
-                ),
-            ],
-        );
-
-        // anonymous fields without the nest quoted
-
-        let spec = r#"(def-msg book-info
-    :lang (:a 'string :b 'number)
-    :title 'string
-    :version 'string
-    :id 'string)"#;
-
-        let x = DefMsg::from_str(spec, None).unwrap();
-        assert_eq!(
-            x.create_gen_structs().unwrap(),
-            vec![
-                GeneratedStruct::new(
-                    "book-info-lang",
-                    vec![
-                        GeneratedField::new("a".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("b".to_string(), "i64".to_string(), None)?,
-                    ],
-                    None,
-                    RPCDataType::Map,
-                ),
-                GeneratedStruct::new(
-                    "book-info",
-                    vec![
-                        GeneratedField::new("lang".to_string(), "BookInfoLang".to_string(), None)?,
-                        GeneratedField::new("title".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("version".to_string(), "String".to_string(), None)?,
-                        GeneratedField::new("id".to_string(), "String".to_string(), None)?,
-                    ],
-                    None,
-                    RPCDataType::Msg,
-                ),
-            ],
-        );
-
-        // list type
-
-        let spec = r#"(def-msg book-info
-    :langs (list 'string)
-    :version 'string)"#;
-
-        let x = DefMsg::from_str(spec, None).unwrap();
-        //dbg!(&x);
-        assert_eq!(
-            x.create_gen_structs().unwrap(),
-            vec![GeneratedStruct::new(
-                "book-info",
-                vec![
-                    GeneratedField::new("langs".to_string(), "Vec<String>".to_string(), None)?,
-                    GeneratedField::new("version".to_string(), "String".to_string(), None)?,
-                ],
-                None,
-                RPCDataType::Msg,
-            ),],
-        );
-
-        let spec = r#"(def-msg authors :names-a (list 'float))"#;
-        let x = DefMsg::from_str(spec, None).unwrap();
-        //dbg!(&x);
-        assert_eq!(
-            x.create_gen_structs().unwrap(),
-            vec![GeneratedStruct::new(
-                "authors",
-                vec![GeneratedField::new(
-                    "names_a".to_string(),
-                    "Vec<f64>".to_string(),
-                    None
-                )?,],
-                None,
-                RPCDataType::Msg,
-            ),],
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_gen_code() -> Result<()> {
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let template_file_path = vec![
-            project_root.join("templates/def_struct.rs.template"),
-            project_root.join("templates/rpc_impl.template"),
-        ];
-
-        let case = r#"(def-msg language-perfer :lang 'string)"#;
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-        //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
-
-        assert_eq!(
-            dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct LanguagePerfer {
-    pub lang: String,
-}
-
-impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
-        );
-
-        //
-        let case = r#"(def-msg language-perfer :lang 'string :version 'number :price 'float)"#;
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-        assert_eq!(
-            dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct LanguagePerfer {
-    pub lang: String,
-    pub version: i64,
-    pub price: f64,
-}
-
-impl_to_rpc!(LanguagePerfer, RPCType::Msg("language-perfer".to_string()));"#
-        );
-
-        //
-        let case = r#"(def-msg book-info
-    :lang '(:a 'string :b 'number)
-    :title 'string
-    :version 'string
-    :id 'string)"#;
-
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-        //dbg!(dm.gen_code_with_files(&template_file_path).unwrap());
-        assert_eq!(
-            dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct BookInfoLang {
-    pub a: String,
-    pub b: i64,
-}
-
-impl_to_rpc!(BookInfoLang, RPCType::Map);
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct BookInfo {
-    pub lang: BookInfoLang,
-    pub title: String,
-    pub version: String,
-    pub id: String,
-}
-
-impl_to_rpc!(BookInfo, RPCType::Msg("book-info".to_string()));"#
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_gen_code_list() -> Result<()> {
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let template_file_path = vec![
-            project_root.join("templates/def_struct.rs.template"),
-            project_root.join("templates/rpc_impl.template"),
-        ];
-
-        let case = r#"(def-msg authors :names (list 'string))"#;
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-        //dbg!(&dm);
-        assert_eq!(
-            dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct Authors {
-    pub names: Vec<String>,
-}
-
-impl_to_rpc!(Authors, RPCType::Msg("authors".to_string()));"#
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_gen_code_optional() -> Result<()> {
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let template_file_path = vec![
-            project_root.join("templates/def_struct.rs.template"),
-            project_root.join("templates/rpc_impl.template"),
-        ];
-
-        let case = r#"(def-msg authors :names (optional 'string))"#;
-        let dm = DefMsg::from_str(case, Default::default()).unwrap();
-        //dbg!(&dm);
-        assert_eq!(
-            dm.gen_code_with_files(&template_file_path).unwrap(),
-            r#"#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct Authors {
-    pub names: Option<String>,
-}
-
-impl_to_rpc!(Authors, RPCType::Msg("authors".to_string()));"#
-        );
-
-        Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::{collections::HashMap, fs::File, path::PathBuf};
 
 use crate::{Data, ExprData};
@@ -22,7 +22,7 @@ impl DataFile {
         let mut df: DataFile = Default::default();
 
         for e in parser.iter_expr() {
-            let Data::Data(d) = Data::from_expr(e)? else {
+            let Data::Data(d) = Data::from_expr(e).context("Generate Data failed")? else {
                 anyhow::bail!("File can only contains the expr data")
             };
 

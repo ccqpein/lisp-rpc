@@ -1,6 +1,4 @@
-#[cfg(test)]
 use lisp_rpc_rust_parser::Parser;
-#[cfg(test)]
 use std::io::Cursor;
 
 use super::*;
@@ -32,7 +30,7 @@ impl Error for DefPkgError {}
 "#]
 #[derive(Debug, Eq, PartialEq)]
 pub struct DefPkg {
-    pkg_name: String,
+    pub pkg_name: String,
 }
 
 impl DefPkg {
@@ -87,8 +85,7 @@ impl DefPkg {
         })
     }
 
-    #[cfg(test)]
-    fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
+    pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         let mut p = match parser {
             Some(p) => p,
             None => Default::default(),
@@ -100,7 +97,7 @@ impl DefPkg {
         Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }
 
-    fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
+    pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut tera = Tera::default();
         let mut context = tera::Context::new();
 
@@ -155,48 +152,4 @@ impl RPCSpecCargo for DefPkg {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
 
-    use super::*;
-
-    #[test]
-    fn test_parse_def_pkg() {
-        let case = r#"(def-rpc-package demo)"#;
-        let dp = DefPkg::from_str(case, Default::default()).unwrap();
-        assert_eq!(
-            dp,
-            DefPkg {
-                pkg_name: "demo".to_string()
-            }
-        );
-    }
-
-    #[test]
-    fn test_gen_code() {
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let template_file_path = vec![project_root.join("templates/Cargo.toml.template")];
-
-        let case = r#"(def-rpc-package demo)"#;
-        let dp = DefPkg::from_str(case, Default::default()).unwrap();
-
-        assert_eq!(
-            dp.gen_code_with_files(&template_file_path).unwrap(),
-            r#"[package]
-name = "demo"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-actix-web = "4"
-anyhow = "1"
-lisp-rpc-rust-serializer = "0"
-lisp-rpc-rust-server = "0"
-serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-tracing = "0"
-tracing-subscriber = { version = "0", features = ["env-filter"] }"#,
-        )
-    }
-}

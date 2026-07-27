@@ -67,6 +67,16 @@ pub trait GetAbleData {
     fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data>;
 }
 
+pub fn is_nil_symbol(e: &Expr) -> bool {
+    match e {
+        Expr::Atom(a) => match &a.value {
+            TypeValue::Symbol(s) if s.to_lowercase().as_str() == "nil" => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 /// define all the data, list, and map type that can be treat as Data
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Data {
@@ -131,7 +141,6 @@ impl Data {
                 vv @ _ => Ok(Self::Value(vv.clone())),
             },
 
-            // cannot handle comment so far, so dont call this function with the comment expr
             Expr::Comment(_) => Err(anyhow!(DataError {
                 msg: format!("cannot generate Data from the comment"),
                 err_type: DataErrorType::InvalidInput,
@@ -139,7 +148,7 @@ impl Data {
         }
     }
 
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
             Data::Data(value_data) => value_data.to_string(),
             Data::List(list_data) => list_data.to_string(),
@@ -243,12 +252,12 @@ impl GetAbleData for Data {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ExprData {
     name: String,
-    rest_args: Vec<(Expr, Data)>,
+    pub rest_args: Vec<(Expr, Data)>,
     inner_map: OnceCell<DataMap>,
 }
 
 impl ExprData {
-    fn from_expr(expr: &Expr) -> Result<Self> {
+    pub fn from_expr(expr: &Expr) -> Result<Self> {
         let exprs = expr.filter_out_all_comments()?.collect::<Vec<_>>();
 
         if exprs.len() < 1 {
@@ -285,7 +294,11 @@ impl ExprData {
                         value: crate::TypeValue::Keyword(_),
                     }),
                     _,
-                ) => rest_a.push((k.clone(), Data::from_expr(v)?)),
+                ) => {
+                    if !is_nil_symbol(v) {
+                        rest_a.push((k.clone(), Data::from_expr(v)?))
+                    };
+                }
                 _ => {
                     return Err(anyhow!(DataError {
                         msg: "has to be keyword value pairs".to_string(),
@@ -303,7 +316,7 @@ impl ExprData {
     }
 
     /// make new expr data
-    fn new<'a>(name: &str, rest_args: impl Iterator<Item = (Expr, Data)>) -> Result<Self> {
+    pub fn new<'a>(name: &str, rest_args: impl Iterator<Item = (Expr, Data)>) -> Result<Self> {
         let _ = TypeValue::make_symbol(name)?;
         Ok(Self {
             name: name.to_string(),
@@ -318,7 +331,7 @@ impl ExprData {
     }
 
     /// generate the data
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         format!(
             "({} {})",
             self.name,
@@ -411,7 +424,9 @@ impl ListData {
                 Expr::List(exprs) => {
                     let mut res = vec![];
                     for e in exprs {
-                        res.push(Data::from_expr(e)?);
+                        if !is_nil_symbol(e) {
+                            res.push(Data::from_expr(e)?);
+                        }
                     }
 
                     Ok(Self { inner_data: res })
@@ -429,7 +444,7 @@ impl ListData {
         }
     }
 
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         format!(
             "'({})",
             self.inner_data.iter().map(|d| d.to_string()).join(" ")
@@ -469,12 +484,17 @@ impl MapData {
         let map = match expr {
             Expr::Quote(e2) => match e2.as_ref() {
                 Expr::List(ee) => {
-                    for [k, _] in ee.iter().array_chunks() {
-                        match k {
-                            Expr::Atom(Atom {
-                                value: crate::TypeValue::Keyword(k),
-                            }) => {
-                                kwrds.push(k.to_string());
+                    for [k, v] in ee.iter().array_chunks() {
+                        match (k, v) {
+                            (
+                                Expr::Atom(Atom {
+                                    value: crate::TypeValue::Keyword(k),
+                                }),
+                                _,
+                            ) => {
+                                if !is_nil_symbol(v) {
+                                    kwrds.push(k.to_string());
+                                }
                             }
                             _ => {
                                 return Err(anyhow!(DataError {
@@ -597,7 +617,9 @@ impl DataMap {
                     }),
                     _,
                 ) => {
-                    table.insert(k.to_string(), Data::from_expr(v)?);
+                    if !is_nil_symbol(v) {
+                        table.insert(k.to_string(), Data::from_expr(v)?);
+                    }
                 }
                 _ => {
                     return Err(anyhow!(DataError {
@@ -641,14 +663,6 @@ impl DataMap {
         }
     }
 
-    #[cfg(test)]
-    pub fn to_string(&self) -> String {
-        self.hash_map
-            .iter()
-            .map(|(k, v)| format!(":{} {}", k, v.to_string()))
-            .join(" ")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (&String, &Data)> {
         self.hash_map.iter()
     }
@@ -683,281 +697,5 @@ impl IntoIterator for DataMap {
 
     fn into_iter(self) -> Self::IntoIter {
         self.hash_map.into_iter()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::assert_matches;
-
-    #[test]
-    fn test_read_data_from_str() {
-        let s = r#"(get-book :title "hello world" :version "1984")"#;
-        let mut p = Parser::new();
-        let d = ExprData::from_str(&mut p, s);
-        //dbg!(&d);
-        assert!(d.is_ok());
-
-        let dd = d.unwrap();
-        assert_eq!(dd.get_name(), "get-book");
-
-        assert_eq!(dd.get_name(), "get-book");
-        assert_eq!(
-            dd.get("title"),
-            Some(&Data::from_str(&mut p, r#""hello world""#).unwrap())
-        );
-
-        //
-
-        let s = r#"(get-book :title "hello world" :version 1984)"#;
-
-        let mut p = Parser::new().config_read_number(true);
-        let d = ExprData::from_str(&mut p, s).unwrap();
-
-        assert_eq!(d.get_name(), "get-book");
-        assert_eq!(
-            d.get("version"),
-            Some(&Data::Value(TypeValue::Number(TypeValueNumber::Int(1984))))
-        );
-
-        //
-
-        let s = r#"(rpc-call :version 1 :aa 2)"#;
-        let d = ExprData::from_str(&mut Default::default(), s);
-        assert!(d.is_ok());
-
-        // comment check
-        let s = r#"(rpc-call :version 1 ;; comment
-                     :aa 2)"#;
-        let d = ExprData::from_str(&mut Default::default(), s);
-        assert!(d.is_ok());
-        assert_eq!(
-            d.unwrap().get("version"),
-            Some(&Data::Value(TypeValue::Number(TypeValueNumber::Int(1))))
-        );
-
-        let s = r#"(rpc-call :version 1 ;; :aa 2)"#;
-        let d = ExprData::from_str(&mut Default::default(), s);
-        assert!(d.is_err());
-    }
-
-    #[test]
-    fn test_gen_data_from_multiple_exprs() {
-        let mut parser = Parser::new();
-        parser.tokenize(&mut Cursor::new(
-            "(a :b \"c\" :c 123) (a :a '(1 2 3))".as_bytes(),
-        ));
-
-        parser.parse().unwrap();
-        let exprs: Vec<_> = parser.iter_expr().collect();
-
-        //dbg!(&exprs);
-
-        let data = Data::from_expr(&exprs[0]);
-        assert_eq!(
-            data.unwrap(),
-            Data::from_str(&mut Default::default(), "(a :b \"c\" :c 123)").unwrap()
-        );
-
-        let data = Data::from_expr(&exprs[1]);
-        assert_eq!(
-            data.unwrap(),
-            Data::from_str(&mut Default::default(), "(a :a '(1 2 3))").unwrap()
-        );
-    }
-
-    #[test]
-    fn test_read_nest_data() {
-        let s = r#"(get-book :title "hello world" :version "1984" :lang '(:lang "english" :encoding 77))"#;
-        let d = Data::from_str(&mut Default::default(), s).unwrap();
-        //dbg!(&d);
-        assert!(matches!(d, Data::Data(_)));
-
-        assert_eq!(
-            d.get("title"),
-            Some(&Data::Value(TypeValue::String("hello world".to_string())))
-        );
-
-        assert_eq!(
-            d.get("version"),
-            Some(&Data::Value(TypeValue::String("1984".to_string())))
-        );
-
-        assert!(matches!(d.get("lang"), Some(&Data::Map(_))));
-
-        let Some(Data::Map(dd)) = d.get("lang") else {
-            panic!()
-        };
-
-        assert_eq!(
-            dd.get("lang"),
-            Some(&Data::Value(TypeValue::String("english".to_string())))
-        );
-
-        assert_eq!(
-            dd.get("encoding"),
-            Some(&Data::Value(TypeValue::Number(TypeValueNumber::Int(77))))
-        );
-
-        //
-        let s = r#"(book-info :id "123" :title "hello world" :version "1984" :lang (language-perfer :lang "english"))"#;
-        let d = Data::from_str(&mut Default::default(), s).unwrap();
-
-        assert!(matches!(d, Data::Data(_)));
-
-        assert_eq!(
-            d.get("title"),
-            Some(&Data::Value(TypeValue::String("hello world".to_string())))
-        );
-
-        assert_eq!(
-            d.get("id"),
-            Some(&Data::Value(TypeValue::String("123".to_string())))
-        );
-
-        assert_eq!(
-            d.get("version"),
-            Some(&Data::Value(TypeValue::String("1984".to_string())))
-        );
-
-        assert!(matches!(d.get("lang"), Some(&Data::Data(_))));
-
-        let Some(Data::Data(dd)) = d.get("lang") else {
-            panic!()
-        };
-
-        assert_eq!(
-            dd.get("lang"),
-            Some(&Data::Value(TypeValue::String("english".to_string())))
-        );
-
-        assert_eq!(dd.get_name(), "language-perfer");
-    }
-
-    #[test]
-    fn test_read_data_from_str_nesty() {
-        let s =
-            r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4) :price 12.34)"#;
-        let mut p = Parser::new().config_read_number(true);
-
-        //dbg!(p.parse_root(Cursor::new(s)));
-
-        let d = Data::from_str(&mut p, s).unwrap();
-
-        //dbg!(&d);
-        assert_matches!(d, Data::Data(ExprData { .. }));
-
-        assert_eq!(
-            d.to_string(),
-            r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4) :price 12.34)"#
-        );
-
-        let Data::Data(d) = d else { panic!() };
-
-        assert_eq!(
-            d.get("version"),
-            Some(&Data::List(
-                ListData::from_str(&mut p, r#"'(1 2 3 4)"#).unwrap()
-            ))
-        );
-
-        assert_eq!(
-            d.get("map"),
-            Some(&Data::Map(
-                MapData::from_str(&mut p, r#"'(:a 2 :r 4)"#).unwrap()
-            ))
-        );
-
-        assert_eq!(
-            d.get("price"),
-            Some(&Data::Value(TypeValue::Number(TypeValueNumber::Float(
-                12.34
-            )))),
-        );
-
-        assert_eq!(
-            d.to_string(),
-            r#"(get-book :title "hello world" :version '(1 2 3 4) :map '(:a 2 :r 4) :price 12.34)"#
-        )
-    }
-
-    #[test]
-    fn test_data_to_str() {
-        let mut p = Parser::new();
-        let s = r#"(get-book :title "hello world" :version "1984")"#;
-        let d = ExprData::from_str(&mut p, s).unwrap();
-
-        assert_eq!(s, d.to_string());
-
-        //
-
-        let e = ExprData::new("a b", [].into_iter());
-        assert!(e.is_err());
-
-        //
-
-        let e = ExprData::new("a-b", [].into_iter());
-        assert!(e.is_ok());
-        assert_eq!(e.unwrap().to_string(), "(a-b )")
-    }
-
-    #[test]
-    fn test_get_data() {
-        let mut p = Parser::new();
-        let e = ExprData::from_str(&mut p, r#"(get-book :title "hello world" :version "1984")"#)
-            .unwrap();
-
-        assert_eq!(
-            e.get("title"),
-            Some(&Data::Value(TypeValue::String("hello world".to_string()))),
-        );
-    }
-
-    #[test]
-    fn test_make_map_data() {
-        let mut p = Parser::new();
-        let e = Data::from_str(
-            &mut p,
-            r#"'(:title 'string :version 'string :lang 'language-perfer)"#,
-        )
-        .unwrap();
-
-        matches!(e, Data::Map(_));
-        assert_eq!(
-            e.get("version"),
-            Some(&Data::Value(TypeValue::Symbol("string".to_string())))
-        );
-
-        assert_eq!(
-            e.get("lang"),
-            Some(&Data::Value(TypeValue::Symbol(
-                "language-perfer".to_string()
-            )))
-        );
-
-        //
-
-        let e = Data::from_str(
-            &mut p,
-            r#"'(:title 'string :vesion 'string :lang '(:lang 'string :encoding 'number))"#,
-        )
-        .unwrap();
-        matches!(e, Data::Map(_));
-        assert_eq!(
-            e.get("lang"),
-            Some(&Data::from_str(&mut p, r#"'(:lang 'string :encoding 'number)"#,).unwrap())
-        );
-
-        assert_eq!(
-            e,
-            Data::Map(
-                MapData::from_str(
-                    &mut p,
-                    r#"'(:title 'string :vesion 'string :lang '(:lang 'string :encoding 'number))"#,
-                )
-                .unwrap()
-            )
-        );
     }
 }
