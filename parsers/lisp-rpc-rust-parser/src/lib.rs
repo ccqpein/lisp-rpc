@@ -125,6 +125,15 @@ impl TypeValue {
         }
     }
 
+    /// Kind of the same as to_string except wont have double quotes
+    /// for string
+    pub fn get_string(&self) -> Result<String> {
+        match self {
+            TypeValue::String(s) => Ok(s.to_string()),
+            x @ _ => anyhow::bail!("{:?} isn't the String type that can get string", x),
+        }
+    }
+
     pub fn make_symbol(s: &str) -> Result<Self> {
         if s.contains([' ']) {
             Err(anyhow::anyhow!(ParserError::CorruptData(
@@ -203,19 +212,19 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn into_tokens(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
             Expr::Atom(atom) => atom.to_string(),
             Expr::List(exprs) => {
                 String::from("(")
                     + &exprs
                         .iter()
-                        .map(|a| a.into_tokens())
+                        .map(|a| a.to_string())
                         .collect::<Vec<String>>()
                         .join(" ")
                     + ")"
             }
-            Expr::Quote(expr) => String::from("'") + &expr.into_tokens(),
+            Expr::Quote(expr) => String::from("'") + &expr.to_string(),
             Expr::Comment(s) => String::from("; ") + s,
         }
     }
@@ -255,7 +264,7 @@ impl Expr {
 
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.into_tokens())
+        write!(f, "{}", self.to_string())
     }
 }
 

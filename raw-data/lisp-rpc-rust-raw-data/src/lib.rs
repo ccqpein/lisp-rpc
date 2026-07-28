@@ -158,6 +158,14 @@ impl Data {
         }
     }
 
+    /// Get the string value from Data::Value, no double quotes than to_string
+    pub fn get_string(&self) -> Result<String> {
+        match self {
+            Data::Value(type_value) => type_value.get_string(),
+            x @ _ => anyhow::bail!("{:?} isn't the Data::Value type that can get string", x),
+        }
+    }
+
     /// generate the root data.
     /// root data has to be expr
     pub fn new<'a>(
@@ -330,7 +338,7 @@ impl ExprData {
         &self.name
     }
 
-    /// generate the data
+    /// Generate the data string
     pub fn to_string(&self) -> String {
         format!(
             "({} {})",
