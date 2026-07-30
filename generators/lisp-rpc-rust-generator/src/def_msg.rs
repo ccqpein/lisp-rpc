@@ -212,7 +212,7 @@ impl DefMsg {
                         _ => {
                             anyhow::bail!(DefMsgError {
                                 msg:
-                                "create gen structs failed, anonymity type can only be the map or list"
+                                "create gen structs failed, anonymity type can only be the (map|list|optional 'type)"
                                     .to_string(),
                               err_type: DefMsgErrorType::InvalidInput,
                             })
@@ -235,6 +235,7 @@ impl DefMsg {
             fields,
             None,
             self.msg_ty.clone(),
+            None,
         ));
 
         Ok(res)

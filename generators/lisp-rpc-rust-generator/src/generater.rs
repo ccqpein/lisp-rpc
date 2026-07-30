@@ -48,6 +48,9 @@ pub struct GeneratedStruct {
     /// different types have different data format
     /// this for detect which is which
     pub rpc_type: RPCDataType,
+
+    /// For def-rpc, this is the return type
+    pub return_type: Option<String>,
 }
 
 impl GeneratedStruct {
@@ -56,6 +59,7 @@ impl GeneratedStruct {
         fields: Vec<GeneratedField>,
         comment: Option<String>,
         ty: RPCDataType,
+        rt: Option<String>,
     ) -> Self {
         Self {
             name: kebab_to_pascal_case(data_name),
@@ -65,6 +69,8 @@ impl GeneratedStruct {
             data_name: data_name.to_string(),
 
             rpc_type: ty,
+
+            return_type: rt.as_ref().map(|x| kebab_to_pascal_case(x)),
         }
     }
 
@@ -86,6 +92,10 @@ impl GeneratedStruct {
             RPCDataType::Rpc => {
                 ctx.insert("data_name", &self.data_name);
                 ctx.insert("ty", "rpc");
+                ctx.insert(
+                    "return_type",
+                    &self.return_type.as_ref().map_or("()", |v| v),
+                )
             }
         }
     }
@@ -128,5 +138,3 @@ impl GeneratedStruct {
         Ok(result)
     }
 }
-
-

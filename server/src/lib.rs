@@ -27,6 +27,10 @@ pub trait ToRPCType: Send + Sync {
     fn serialize_lisp(&self) -> anyhow::Result<String>;
 }
 
+pub trait ToRPCReturn: Send + Sync + ToRPCType {
+    type Return: Send + Sync + ToRPCType;
+}
+
 #[macro_export]
 macro_rules! impl_to_rpc {
     ($t:ty, $rpc:expr) => {
@@ -37,6 +41,15 @@ macro_rules! impl_to_rpc {
             fn serialize_lisp(&self) -> anyhow::Result<String> {
                 lisp_rpc_to_str(self).map_err(|e| anyhow::anyhow!(e))
             }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_to_rpc_return {
+    ($t:ty, $r:ty) => {
+        impl ToRPCReturn for $t {
+            type Return = $r;
         }
     };
 }
@@ -72,5 +85,3 @@ impl_to_rpc_basic!(
     &str,
     ()
 );
-
-

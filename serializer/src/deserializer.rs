@@ -78,7 +78,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
             self.input = &self.input[3..];
             visitor.visit_bool(false)
         } else {
-            Err(LispRPCSerializerError::Msg("expected bool".to_string()))
+            Err(LispRPCSerializerError::Msg(format!(
+                "expected bool, found: {}",
+                self.input
+            )))
         }
     }
 
@@ -195,7 +198,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
     {
         self.eat_whitespace();
         if !self.input.starts_with('\"') {
-            return Err(LispRPCSerializerError::Msg("expected \"".to_string()));
+            return Err(LispRPCSerializerError::Msg(format!(
+                "expected \" at start of string, found: {}",
+                self.input
+            )));
         }
         self.input = &self.input[1..];
         match self.input.find('\"') {
@@ -204,9 +210,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
                 self.input = &self.input[len + 1..];
                 visitor.visit_borrowed_str(s)
             }
-            None => Err(LispRPCSerializerError::Msg(
-                "unterminated string".to_string(),
-            )),
+            None => Err(LispRPCSerializerError::Msg(format!(
+                "unterminated string: {}",
+                self.input
+            ))),
         }
     }
 
@@ -240,7 +247,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
             self.input = &self.input[3..];
             visitor.visit_unit()
         } else {
-            Err(LispRPCSerializerError::Msg("expected nil".to_string()))
+            Err(LispRPCSerializerError::Msg(format!(
+                "expected nil, found: {}",
+                self.input
+            )))
         }
     }
 
@@ -272,13 +282,19 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
     {
         self.eat_whitespace();
         if !self.input.starts_with("'(") {
-            return Err(LispRPCSerializerError::Msg("expected '(".to_string()));
+            return Err(LispRPCSerializerError::Msg(format!(
+                "expected '(', found: {}",
+                self.input
+            )));
         }
         self.input = &self.input[2..];
         let value = visitor.visit_seq(LispRPCSeqAccess { de: self })?;
         self.eat_whitespace();
         if !self.input.starts_with(')') {
-            return Err(LispRPCSerializerError::Msg("expected )".to_string()));
+            return Err(LispRPCSerializerError::Msg(format!(
+                "expected ')', found: {}",
+                self.input
+            )));
         }
         self.input = &self.input[1..];
         Ok(value)
@@ -309,7 +325,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
     {
         self.eat_whitespace();
         if !self.input.starts_with("'(") {
-            return Err(LispRPCSerializerError::Msg("expected '(".to_string()));
+            return Err(LispRPCSerializerError::Msg(format!(
+                "expected '(', found: {}",
+                self.input
+            )));
         }
         self.input = &self.input[2..];
 
@@ -317,7 +336,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
 
         self.eat_whitespace();
         if !self.input.starts_with(')') {
-            return Err(LispRPCSerializerError::Msg("expected )".to_string()));
+            return Err(LispRPCSerializerError::Msg(format!(
+                "expected ')', found: {}",
+                self.input
+            )));
         }
         self.input = &self.input[1..];
         Ok(value)
@@ -356,7 +378,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
 
         self.eat_whitespace();
         if !self.input.starts_with(')') {
-            return Err(LispRPCSerializerError::Msg("expected )".to_string()));
+            return Err(LispRPCSerializerError::Msg(format!(
+                "expected ')', found: {}",
+                self.input
+            )));
         }
         self.input = &self.input[1..];
         Ok(value)
@@ -376,9 +401,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
             self.input = &self.input[1..];
             visitor.visit_enum(LispRPCVariantAccess { de: self })
         } else {
-            Err(LispRPCSerializerError::Msg(
-                "expected ' for enum".to_string(),
-            ))
+            Err(LispRPCSerializerError::Msg(format!(
+                "expected '\'' for enum, found: {}",
+                self.input
+            )))
         }
     }
 

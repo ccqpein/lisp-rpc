@@ -36,9 +36,9 @@ panic = "abort"
 
 [workspace.dependencies]
 lisp-rpc-rust-parser = { version = "0.1.8", path = "parsers/lisp-rpc-rust-parser" }
-lisp-rpc-rust-generator = { version = "0.1.7", path = "generators/lisp-rpc-rust-generator" }
-lisp-rpc-rust-serializer = { version = "0.1.1", path = "serializer" }
-lisp-rpc-rust-server = { version = "0.1.2", path = "server" }
+lisp-rpc-rust-generator = { version = "0.1.8", path = "generators/lisp-rpc-rust-generator" }
+lisp-rpc-rust-serializer = { version = "0.1.2", path = "serializer" }
+lisp-rpc-rust-server = { version = "0.1.3", path = "server" }
 lisp-rpc-rust-raw-data = { version = "0.1.4", path = "raw-data/lisp-rpc-rust-raw-data" }
 
 # deprecated
