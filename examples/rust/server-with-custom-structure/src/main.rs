@@ -16,6 +16,7 @@ struct SomeData {
 
 // the handler function arguments **has to be** RPCType::RPC
 impl_to_rpc!(SomeData, RPCType::RPC("some-data".to_string()));
+impl_to_rpc_return!(SomeData, String);
 
 // if some type is map type, need to call register_global_map_type
 // pub fn init() {

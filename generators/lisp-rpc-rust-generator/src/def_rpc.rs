@@ -35,7 +35,7 @@ pub struct DefRPC {
     pub args: Vec<Expr>,
 
     ///
-    pub return_value: Option<String>,
+    pub return_type: Option<String>,
 }
 
 impl DefRPC {
@@ -111,7 +111,7 @@ impl DefRPC {
             }
         };
 
-        let return_value = match rest_expr.get(2) {
+        let return_type = match rest_expr.get(2) {
             Some(Expr::Quote(box e)) => match e {
                 Expr::Atom(Atom {
                     value: TypeValue::Symbol(rn),
@@ -135,7 +135,7 @@ impl DefRPC {
         Ok(Self {
             rpc_name,
             args: arguments.to_vec(),
-            return_value,
+            return_type,
         })
     }
 
@@ -224,7 +224,7 @@ impl DefRPC {
                         _ => {
                             anyhow::bail!(DefRPCError {
                                 msg:
-                                "create gen structs failed, anonymity type can only be the map or list"
+                                "create gen structs failed, anonymity type can only be the (map|list|optional 'type)"
                                     .to_string(),
                               err_type: DefRPCErrorType::InvalidInput,
                             })
@@ -247,6 +247,7 @@ impl DefRPC {
             fields,
             None,
             RPCDataType::Rpc,
+            self.return_type.clone(),
         ));
 
         Ok(res)
@@ -298,5 +299,3 @@ fn de_quoted(e: &Expr) -> &Expr {
         _ => e,
     }
 }
-
-

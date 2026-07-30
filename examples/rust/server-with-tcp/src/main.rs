@@ -15,6 +15,7 @@ struct SomeData {
 
 // impl RPCType with impl_to_rpc! from lisp_rpc_rust_server and lisp_rpc_rust_serializer
 impl_to_rpc!(SomeData, RPCType::RPC("some-data".to_string()));
+impl_to_rpc_return!(SomeData, String);
 
 async fn handle_connection(mut socket: TcpStream, server: RPCServer) {
     let mut buffer = vec![0; 4096];

@@ -8,4 +8,7 @@ impl_to_rpc!({{ name }}, {% if ty == "msg" -%}
     RPCType::List
 {%- else -%}
     RPCType::V
-{%- endif -%});
+{%- endif -%});{% if ty == "rpc" %}
+
+impl_to_rpc_return!({{ name }}, {{return_type}});
+{%- endif -%}

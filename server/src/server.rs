@@ -11,38 +11,42 @@ use std::sync::Arc;
 use super::*;
 
 /// A trait that captures the relationship between a request type T and its response.
-pub trait RpcFunc<T>: Send + Sync + 'static {
-    type Resp: Serialize + ToRPCType + 'static;
-    fn call(&self, req: T) -> Result<Self::Resp>;
+pub trait RpcFunc<T, R>: Send + Sync + 'static
+where
+    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn<Return = R> + 'static,
+    R: Serialize + ToRPCType + 'static,
+{
+    fn call(&self, req: T) -> Result<R>;
 }
 
-impl<T, R, F> RpcFunc<T> for F
+impl<T, R, F> RpcFunc<T, R> for F
 where
-    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + 'static,
+    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn<Return = R> + 'static,
     R: Serialize + ToRPCType + 'static,
     F: Fn(T) -> Result<R> + Send + Sync + 'static,
 {
-    type Resp = R;
-    fn call(&self, req: T) -> Result<Self::Resp> {
+    fn call(&self, req: T) -> Result<R> {
         (self)(req)
     }
 }
 
 /// A trait that captures the relationship between a request type T and its async response.
-pub trait AsyncRpcFunc<T>: Send + Sync + 'static {
-    type Resp: Serialize + ToRPCType + 'static;
-    type Fut: Future<Output = Result<Self::Resp>> + Send + 'static;
+pub trait AsyncRpcFunc<T, R>: Send + Sync + 'static
+where
+    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn<Return = R> + 'static,
+    R: Serialize + ToRPCType + 'static,
+{
+    type Fut: Future<Output = Result<R>> + Send + 'static;
     fn call(&self, req: T) -> Self::Fut;
 }
 
-impl<T, R, F, Fut> AsyncRpcFunc<T> for F
+impl<T, R, F, Fut> AsyncRpcFunc<T, R> for F
 where
-    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + 'static,
+    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn<Return = R> + 'static,
     R: Serialize + ToRPCType + 'static,
     Fut: Future<Output = Result<R>> + Send + 'static,
     F: Fn(T) -> Fut + Send + Sync + 'static,
 {
-    type Resp = R;
     type Fut = Fut;
     fn call(&self, req: T) -> Self::Fut {
         (self)(req)
@@ -62,8 +66,9 @@ struct Handler<T, F> {
 
 impl<T, F> RpcHandler for Handler<T, F>
 where
-    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + 'static,
-    F: RpcFunc<T>,
+    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn + 'static,
+    T::Return: Serialize + ToRPCType + 'static,
+    F: RpcFunc<T, T::Return>,
 {
     fn handle(&self, raw_data: &str) -> Result<Box<dyn ToRPCType>> {
         let req: T =
@@ -89,8 +94,9 @@ struct AsyncHandler<T, F> {
 
 impl<T, F> AsyncRpcHandler for AsyncHandler<T, F>
 where
-    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + 'static,
-    F: AsyncRpcFunc<T>,
+    T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn + 'static,
+    T::Return: Serialize + ToRPCType + 'static,
+    F: AsyncRpcFunc<T, T::Return>,
 {
     fn handle(
         &self,
@@ -129,8 +135,9 @@ impl RPCServer {
     /// Register a handler for a specific command
     pub fn register<T, F>(mut self, func: F) -> Result<Self>
     where
-        T: DeserializeOwned + Debug + Send + Sync + ToRPCType + 'static,
-        F: RpcFunc<T>,
+        T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn + 'static,
+        T::Return: Serialize + ToRPCType + 'static,
+        F: RpcFunc<T, T::Return>,
     {
         // has to be RPCType::RPC
         let command = match <T as ToRPCType>::to_rpc_type() {
@@ -153,8 +160,9 @@ impl RPCServer {
     /// Register an async handler for a specific command
     pub fn register_async<T, F>(mut self, func: F) -> Result<Self>
     where
-        T: DeserializeOwned + Debug + Send + Sync + ToRPCType + 'static,
-        F: AsyncRpcFunc<T>,
+        T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn + 'static,
+        T::Return: Serialize + ToRPCType + 'static,
+        F: AsyncRpcFunc<T, T::Return>,
     {
         // has to be RPCType::RPC
         let command = match <T as ToRPCType>::to_rpc_type() {
@@ -217,8 +225,6 @@ impl RPCServer {
 
 /// Helper to get the first symbol from "(symbol ...)"
 fn extract_command_name(raw: &str) -> Option<String> {
-    let trimmed = raw.trim().trim_start_matches('(');
+    let trimmed = raw.trim().trim_start_matches('(').trim_end_matches(')');
     trimmed.split_whitespace().next().map(|s| s.to_string())
 }
-
-
