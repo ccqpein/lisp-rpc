@@ -1,7 +1,33 @@
 (defpackage lisp-rpc-generator
-  (:use #:cl))
+  (:use #:cl #:common))
 
 (in-package :lisp-rpc-generator)
+
+(defun def-map-to-lisp-rpc-data (name keys &optional stream)
+  (declare (ignore stream))
+  `(defmethod to-lisp-rpc-data ((x ,name) &rest args &key &allow-other-keys)
+     (declare (ignore args))
+     (format nil
+             "(~{:~1{~A ~A~}~^ ~})"
+             (list ,@(loop for k in keys
+                           collect `(list (quote ,(intern (symbol-name k)))
+                                          (to-lisp-rpc-data (,(read-from-string (format nil "~a-~a" name k)) x))))))))
+
+(defun def-map (name map-kv-pairs &optional stream)
+  "kind of the def-msg, but the defmethod define isn't same"
+  (format stream "~a~%~%" (prin1-to-string (def-msg-struct name map-kv-pairs stream)))
+  (format stream "~a~%~%" (prin1-to-string (def-map-to-lisp-rpc-data
+                                               name
+                                               (loop for (k a) on map-kv-pairs by #'cddr
+                                                     collect k)))))
+
+(defun def-list (name args &optional stream)
+  "(list 'string), placeholder, no need to make the additional struct"
+  (declare (ignore name args stream)))
+
+(defun def-optional (name args &optional stream)
+  "(optional 'string), placeholder, look like all fields in lisp struct is optional anyway"
+  (declare (ignore name args stream)))
 
 (defun def-funs-router (name key args)
   "pick which function should I call.
@@ -59,52 +85,20 @@ Return the function and the name of the type"
                            collect `(list (quote ,(intern (symbol-name k)))
                                           (to-lisp-rpc-data (,(read-from-string (format nil "~a-~a" name k)) x))))))))
 
-(def-msg (read-from-string "(def-msg language-preference :lang 'string)") t)
-
-(def-msg (read-from-string "(def-msg book-info
-  :lang 'language-preference
-  :title 'string
-  :version 'string
-  :id 'string)") t)
-
-(def-msg (read-from-string "(def-msg book-info
-  :lang '(:lang 'string :encoding 'number)
-  :title 'string)") t)
-
-(def-msg (read-from-string "(def-msg authors :names (list 'string))") t)
-
-(defun def-map (name map-kv-pairs &optional stream)
-  "kind of the def-msg, but the defmethod define isn't same"
-  (format stream "~a~%~%" (prin1-to-string (def-msg-struct name map-kv-pairs stream)))
-  (format stream "~a~%~%" (prin1-to-string (def-map-to-lisp-rpc-data
-                                               name
-                                               (loop for (k a) on map-kv-pairs by #'cddr
-                                                     collect k)))))
-
-(defun def-map-to-lisp-rpc-data (name keys &optional stream)
-  (declare (ignore stream))
-  `(defmethod to-lisp-rpc-data ((x ,name) &rest args &key &allow-other-keys)
-     (declare (ignore args))
-     (format nil
-             "(~{:~1{~A ~A~}~^ ~})"
-             (list ,@(loop for k in keys
-                           collect `(list (quote ,(intern (symbol-name k)))
-                                          (to-lisp-rpc-data (,(read-from-string (format nil "~a-~a" name k)) x))))))))
-
-(defun def-list (name args &optional stream)
-  "(list 'string), placeholder, no need to make the additional struct"
-  (declare (ignore name args stream)))
-
-(defun def-optional (name args &optional stream)
-  "(optional 'string), placeholder, look like all fields in lisp struct is optional anyway"
-  (declare (ignore name args stream)))
-
 (defun def-rpc (rpc-expression &optional stream)
   (unless (eq 'def-rpc (first rpc-expression))
-    (error "fisrt elemenet of rpc-expression has to be the def-rpc"))
-  ;; generated struct like msg
-  (format stream "~a~%~%" (prin1-to-string (def-msg-struct (second rpc-expression) (cddr rpc-expression) stream)))
-  (format stream "~a~%~%" (prin1-to-string (def-msg-to-lisp-rpc-data
-                                               (second msg-expression)
-                                               (loop for (k a) on (cddr msg-expression) by #'cddr
-                                                     collect k)))))
+    (error "first element of rpc-expression has to be the def-rpc"))
+  (let* ((name (second rpc-expression))
+         (req-raw (third rpc-expression))
+         (resp-raw (fourth rpc-expression))
+         (req-args (if (and (consp req-raw) (eq (first req-raw) 'quote))
+                       (eval req-raw)
+                       req-raw))
+         (resp-type (if (and (consp resp-raw) (eq (first resp-raw) 'quote))
+                        (eval resp-raw)
+                        resp-raw))
+         (keys (loop for (k a) on req-args by #'cddr collect k)))
+    (format stream "~a~%~%" (prin1-to-string (def-msg-struct name req-args stream)))
+    (format stream "~a~%~%" (prin1-to-string (def-msg-to-lisp-rpc-data name keys stream)))
+    (format stream "~a~%~%" (prin1-to-string `(defmethod rpc-endpoint-p ((req ,name)) t)))
+    (format stream "~a~%~%" (prin1-to-string `(defmethod rpc-response-type ((req ,name)) ',resp-type)))))

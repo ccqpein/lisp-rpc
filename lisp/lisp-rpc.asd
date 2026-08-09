@@ -9,7 +9,9 @@
 (defsystem :lisp-rpc
   :description "Lisp RPC"
   :version "0.0.1"
-  :depends-on ("str" "alexandria")
+  :depends-on ("str" "alexandria" "woo" "bordeaux-threads" "flexi-streams")
   :components ((:file "common")
-               (:file "raw-data"))
+               (:file "raw-data")
+               (:file "generator")
+               (:file "rpc-server"))
   )

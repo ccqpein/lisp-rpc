@@ -1,9 +1,19 @@
 (defpackage common
   (:use #:cl)
   (:export #:to-lisp-rpc-data
-           #:from-lisp-rpc-data))
+           #:from-lisp-rpc-data
+           #:rpc-endpoint-p
+           #:rpc-response-type))
 
 (in-package :common)
+
+(defgeneric rpc-endpoint-p (req)
+  (:documentation "Returns T if REQ is a top-level callable RPC endpoint struct.")
+  (:method (req) nil))
+
+(defgeneric rpc-response-type (req)
+  (:documentation "Returns the expected response type symbol for an RPC request struct.")
+  (:method (req) nil))
 
 (defmethod to-lisp-rpc-data ((x string) &rest args &key &allow-other-keys)
   (declare (ignore args))
