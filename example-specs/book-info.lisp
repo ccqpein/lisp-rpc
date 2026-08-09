@@ -18,3 +18,6 @@
   'book-info)
 
 (def-msg authors :names (list 'string))
+
+(def-rpc ping-no-pong
+    '(:nothing 'string))
