@@ -101,7 +101,7 @@ Return the function and the name of the type"
      (list #'def-list `(cons ,(eval (second args)))))
 
     ((and (typep args 'cons) (eq (first args) 'optional))
-     (list #'def-optional (eval (second args))))
+     (list #'def-optional `(or null ,(eval (second args)))))
     
     (t (error "dont know which function should use for ~a" args))))
 
