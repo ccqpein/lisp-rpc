@@ -31,12 +31,5 @@ get the key value directly
 def the data 
 def the rpc
 
-* others
-
-How to test this package
-
-#+begin_src lisp
-  (load "./lisp-rpc.asd")
-  (ql:quickload "lisp-rpc")
-  (asdf:test-system :lisp-rpc)
-#+end_src
+data can serial to pure data
+server can register some 
