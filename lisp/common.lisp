@@ -15,6 +15,10 @@
   (:documentation "Returns the expected response type symbol for an RPC request struct.")
   (:method (req) nil))
 
+(defmethod to-lisp-rpc-data ((x null) &rest args &key &allow-other-keys)
+  (declare (ignore args))
+  "")
+
 (defmethod to-lisp-rpc-data ((x string) &rest args &key &allow-other-keys)
   (declare (ignore args))
   (format nil "~S" x))
