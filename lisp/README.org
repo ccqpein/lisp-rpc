@@ -1,109 +1,40 @@
 #+TITLE: Lisp-RPC (Common Lisp Implementation)
 
-The Common Lisp implementation of ~lisp-rpc~ leverages Lisp's native S-expression syntax and dynamic metaprogramming capabilities. Because Lisp-RPC data and specs are written in S-expressions, Common Lisp can treat protocol messages directly as native code or data structures, offering fluid transitions between dynamic messaging and formal contract enforcement.
+The Common Lisp implementation of ~lisp-rpc~.
 
-* Overview & Design
+* Install
 
-In Common Lisp:
-- *Native S-Expression Mapping*: Lisp-RPC messages are native Lisp S-expressions. They can be read directly via ~read-from-string~ or processed through CLOS methods.
-- *Function Call Equivalence*: Any Lisp-RPC request like ~(get-book :title "The Hobbit")~ matches standard Common Lisp keyword function call syntax:
-  #+begin_src lisp
-    (defun get-book (&key title)
-      ;; Handle request body
-      )
-  #+end_src
-  This means simple endpoints can evaluate incoming calls directly:
-  #+begin_src lisp
-    (eval (read-from-string "(get-book :title \"The Hobbit\")"))
-  #+end_src
-- *Formal Contract Enforcement*: For production applications, explicit parsing, type checking, struct reconstruction, and contract validation are provided via *Plain Mode* and *Spec Mode*.
+If you use ~quicklisp~, you can clone this repository into ~~/quicklisp/local-projects~ and load the system in your Lisp environment.
 
-* Usage Modes
+Then run ~./make.sh~ (requires ~sbcl~) to build the executable binary ~lisp-rpc-gen~ for spec generation mode.
+
+* Usage
+
+** Homoiconic Usage
+
+Thanks to Lisp's homoiconicity, Lisp-RPC data expressions can be invoked directly as standard function calls.
+
+Check this [[file:examples/homoiconic.lisp][example]] for more details.
 
 ** Plain Mode
 
-Plain Mode provides dynamic parsing and serialization of raw S-expressions without requiring pre-compiled schemas.
+Parse raw Lisp-RPC S-expression strings into raw data objects.
 
-*** 1. Dynamic Parsing (~raw-data.lisp~)
-Parse raw S-expression strings into ~raw-data-struct~ AST objects:
-
-#+begin_src lisp
-  (use-package :lisp-rpc-raw-data)
-
-  (defparameter *ast* (parse-data "(book-info :title \"The Hobbit\" :id 1)"))
-  ;; => #S(RAW-DATA-STRUCT :NAME BOOK-INFO :PLIST (:TITLE "The Hobbit" :ID 1))
-
-  ;; Access fields via property list
-  (getf (raw-data-struct-plist *ast*) :title) ; => "The Hobbit"
-#+end_src
-
-*** 2. Serialization & Deserialization (~common.lisp~)
-Convert Common Lisp objects to Lisp-RPC format strings and vice-versa:
-
-#+begin_src lisp
-  (use-package :common)
-
-  ;; Serialize primitives, lists, and structs
-  (to-lisp-rpc-data "hello")                           ; => "\"hello\""
-  (to-lisp-rpc-data 42)                                ; => "42"
-  (to-lisp-rpc-data '(1 2 3))                          ; => "'(1 2 3)"
-
-  ;; Deserialize Lisp-RPC strings directly into CLOS struct instances
-  (defstruct authors names)
-  (from-lisp-rpc-data "(authors :names '(\"a\" \"b\" \"c\"))")
-  ; => #S(AUTHORS :NAMES ("a" "b" "c"))
-#+end_src
+Check this [[file:examples/raw-data.lisp][example]] for more details.
 
 ** Spec Mode & Code Generation
 
-Spec Mode uses formal schema specifications (~def-msg~ and ~def-rpc~) to generate typed Common Lisp project files (ASDF system and ~lib.lisp~).
+Just like the Rust version, Lisp code can be generated directly from a spec file. Given a spec like [[file:examples/spec-demo.lisp][spec-demo.lisp]], run:
 
-*** 1. Defining a Spec (~spec-demo.lisp~)
-
-#+begin_src lisp
-  (def-rpc-package demo)
-
-  (def-msg language-preference :lang 'string)
-  (def-msg book-info :lang 'language-preference :title 'string :version 'string :id 'string)
-
-  (def-rpc get-book
-    '(:title 'string
-      :version 'string
-      :lang '(:lang 'string :encoding 'number)
-      :authors '(:names '(list 'string)))
-    'book-info)
-#+end_src
-
-*** 2. Generating the Lisp Project
-
-You can generate project files programmatically or via the CLI tool ~lisp-rpc-gen~:
-
-**** Programmatic Generation:
-#+begin_src lisp
-  (lisp-rpc-generator:generate-project "spec-demo.lisp" "./generated-demo/")
-#+end_src
-
-**** CLI Tool (~lisp-rpc-gen~):
-Build the CLI tool using ~make.sh~:
 #+begin_src shell
-  ./make.sh
-  ./lisp/lisp-rpc-gen generate -s spec-demo.lisp -o ./generated-demo/
+  lisp-rpc-gen gen spec-demo.lisp
 #+end_src
 
-This produces ~demo.asd~ and ~lib.lisp~ containing:
-- ~defstruct~ definitions for messages and RPC requests.
-- ~to-lisp-rpc-data~ CLOS methods.
-- Contract methods for endpoint validation:
-  - ~(defmethod rpc-endpoint-p ((req get-book)) t)~
-  - ~(defmethod rpc-response-type ((req get-book)) 'book-info)~
+This generates the ~demo~ package code.
 
-** RPC Server (~rpc-server.lisp~)
+** RPC Server
 
-The Common Lisp RPC server runs on **Woo** (an asynchronous, high-performance HTTP server built on libev).
-
-*** Contract Enforcement & Safety:
-- *Registration Validation*: ~register-rpc-handler~ verifies at registration time that the registered RPC name implements ~rpc-endpoint-p~. Standalone data messages (~def-msg~) are rejected.
-- *Runtime Response Verification*: When a request completes, the server verifies that the handler's return object matches ~rpc-response-type~ declared in the spec.
+The Common Lisp RPC server runs on *Woo* (an asynchronous, high-performance HTTP server built on libev).
 
 *** Server Example:
 
@@ -125,3 +56,68 @@ The Common Lisp RPC server runs on **Woo** (an asynchronous, high-performance HT
   (start-server *server*)
 #+end_src
 
+* APIs
+
+** [[file:util.lisp][util.lisp]]
+
+| Symbol                           | Description                                                      |
+|----------------------------------+------------------------------------------------------------------|
+| ~lisp-rpc-util:to-lisp-rpc-data~   | Converts Lisp values/structs to Lisp-RPC string format           |
+| ~lisp-rpc-util:from-lisp-rpc-data~ | Deserializes Lisp-RPC string data into primitive or CLOS objects |
+| ~lisp-rpc-util:rpc-endpoint-p~     | Predicate check returning T for registered RPC endpoint structs  |
+| ~lisp-rpc-util:rpc-response-type~  | Returns expected response type symbol for an RPC request struct  |
+
+** [[file:raw-data.lisp][raw-data.lisp]]
+
+| Symbol                               | Description                                            |
+|--------------------------------------+--------------------------------------------------------|
+| ~lisp-rpc-raw-data:raw-data~           | Structure representing raw RPC data (~name~, ~kv~)         |
+| ~lisp-rpc-raw-data:make-raw-data~      | Constructor for ~raw-data~ struct                        |
+| ~lisp-rpc-raw-data:raw-data-p~         | Predicate to check if an object is a ~raw-data~ struct   |
+| ~lisp-rpc-raw-data:raw-data-name~      | Accessor for ~raw-data~ name symbol                      |
+| ~lisp-rpc-raw-data:raw-data-kv~        | Accessor for ~raw-data~ key-value payload                |
+| ~lisp-rpc-raw-data:raw-data-map~       | Structure representing raw map data                    |
+| ~lisp-rpc-raw-data:make-raw-data-map~  | Constructor for ~raw-data-map~ struct                    |
+| ~lisp-rpc-raw-data:raw-data-map-p~     | Predicate for ~raw-data-map~ struct                      |
+| ~lisp-rpc-raw-data:raw-data-map-kv~    | Accessor for map key-value list                        |
+| ~lisp-rpc-raw-data:raw-data-list~      | Structure representing raw list data                   |
+| ~lisp-rpc-raw-data:make-raw-data-list~ | Constructor for ~raw-data-list~ struct                   |
+| ~lisp-rpc-raw-data:raw-data-list-p~    | Predicate for ~raw-data-list~ struct                     |
+| ~lisp-rpc-raw-data:raw-data-list-l~    | Accessor for raw list elements                         |
+| ~lisp-rpc-raw-data:data-get~           | Retrieves value for a given key from a raw data or map |
+| ~lisp-rpc-raw-data:get-name~           | Returns the name of a ~raw-data~ object                  |
+| ~lisp-rpc-raw-data:type-of-raw-data~   | Classifies Lisp data into ~:raw~, ~:map~, ~:list~, or ~:data~  |
+| ~lisp-rpc-raw-data:parse-data~         | Parses raw S-expression string into AST objects        |
+| ~lisp-rpc-raw-data:to-string~          | Converts AST objects back to Lisp-RPC formatted string |
+
+** [[file:generator.lisp][generator.lisp]]
+
+| Symbol                              | Description                                                |
+|-------------------------------------+------------------------------------------------------------|
+| ~lisp-rpc-generator:def-msg~          | Generates ~defstruct~ and ~to-lisp-rpc-data~ for message data  |
+| ~lisp-rpc-generator:def-rpc~          | Generates struct and contract methods for RPC endpoints    |
+| ~lisp-rpc-generator:def-rpc-package~  | Emits package definition headers (~defpackage~ / ~in-package~) |
+| ~lisp-rpc-generator:generate-asd~     | Generates ASDF system definition content                   |
+| ~lisp-rpc-generator:generate-project~ | Generates full Lisp project (~.asd~ and ~lib.lisp~) from spec  |
+
+** [[file:rpc-server.lisp][rpc-server.lisp]]
+
+| Symbol                                    | Description                                                |
+|-------------------------------------------+------------------------------------------------------------|
+| ~lisp-rpc-server:rpc-server~                | Structure representing Woo-backed RPC server               |
+| ~lisp-rpc-server:make-rpc-server~           | Constructor for ~rpc-server~ struct                          |
+| ~lisp-rpc-server:rpc-server-p~              | Predicate for ~rpc-server~ struct                            |
+| ~lisp-rpc-server:rpc-server-host~           | Accessor for server host IP                                |
+| ~lisp-rpc-server:rpc-server-port~           | Accessor for server port number                            |
+| ~lisp-rpc-server:rpc-server-handlers~       | Accessor for registered handlers hash-table                |
+| ~lisp-rpc-server:rpc-server-handler-object~ | Accessor for global handler object                         |
+| ~lisp-rpc-server:register-rpc-handler~      | Registers and validates a handler function for an endpoint |
+| ~lisp-rpc-server:start-server~              | Starts the Woo HTTP server                                 |
+| ~lisp-rpc-server:stop-server~               | Stops the server worker thread                             |
+| ~lisp-rpc-server:handle-rpc~                | Generic function for CLOS method handler dispatch          |
+
+** [[file:cli.lisp][cli.lisp]]
+
+| Symbol               | Description                                |
+|----------------------+--------------------------------------------|
+| ~lisp-rpc-cli:main~  | Entry point for the ~lisp-rpc-gen~ CLI tool|

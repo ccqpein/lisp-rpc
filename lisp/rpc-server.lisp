@@ -1,5 +1,5 @@
 (defpackage lisp-rpc-server
-  (:use #:cl #:common)
+  (:use #:cl #:lisp-rpc-util)
   (:export #:rpc-server
            #:make-rpc-server
            #:rpc-server-p
