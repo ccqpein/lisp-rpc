@@ -1,5 +1,5 @@
 (defpackage lisp-rpc-generator
-  (:use #:cl #:common)
+  (:use #:cl #:lisp-rpc-util)
   (:export #:def-msg
            #:def-rpc
            #:def-rpc-package
@@ -13,8 +13,8 @@
     (error "first element of pkg-expression has to be def-rpc-package"))
   (let* ((name (second pkg-expression))
          (pkg (or (find-package name)
-                  (make-package name :use '(#:cl #:common)))))
-    (format stream "(defpackage ~a~%  (:use #:cl #:common))~%~%(in-package :~a)~%~%" name name)
+                  (make-package name :use '(#:cl #:lisp-rpc-util)))))
+    (format stream "(defpackage ~a~%  (:use #:cl #:lisp-rpc-util))~%~%(in-package :~a)~%~%" name name)
     pkg))
 
 (defun generate-asd (package-name &optional stream)
@@ -37,7 +37,7 @@
          (package-name (if pkg-form (second pkg-form) "rpc-lib"))
          (pkg-str (string-downcase (string package-name)))
          (target-pkg (or (find-package package-name)
-                         (make-package package-name :use '(#:cl #:common))))
+                         (make-package package-name :use '(#:cl #:lisp-rpc-util))))
          (forms (let ((*package* target-pkg))
                   (uiop:read-file-forms spec-file-path)))
          (asd-path (merge-pathnames (format nil "~a.asd" pkg-str) (uiop:ensure-directory-pathname output-dir-path)))

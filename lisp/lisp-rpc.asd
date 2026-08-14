@@ -10,7 +10,7 @@
   :description "Lisp RPC"
   :version "0.0.1"
   :depends-on ("str" "alexandria" "woo" "bordeaux-threads" "flexi-streams" "clingon")
-  :components ((:file "common")
+  :components ((:file "util")
                (:file "raw-data")
                (:file "generator")
                (:file "rpc-server")

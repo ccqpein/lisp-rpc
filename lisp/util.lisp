@@ -1,11 +1,11 @@
-(defpackage common
+(defpackage lisp-rpc-util
   (:use #:cl)
   (:export #:to-lisp-rpc-data
            #:from-lisp-rpc-data
            #:rpc-endpoint-p
            #:rpc-response-type))
 
-(in-package :common)
+(in-package :lisp-rpc-util)
 
 (defgeneric rpc-endpoint-p (req)
   (:documentation "Returns T if REQ is a top-level callable RPC endpoint struct.")

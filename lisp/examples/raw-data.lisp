@@ -1,7 +1,7 @@
-(defpackage raw-data
+(defpackage raw-data-example
   (:use #:cl))
 
-(in-package :raw-data)
+(in-package :raw-data-example)
 
 (defun run ()
   (let ((data '("(hello-world)"
