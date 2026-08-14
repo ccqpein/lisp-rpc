@@ -1,4 +1,4 @@
-;;; implenment the raw data~
+;;; implenment the raw data
 (defpackage lisp-rpc-raw-data
   (:use #:cl)
   (:export #:raw-data
@@ -74,8 +74,7 @@
                 ;; map actually is the plist
                 ;; keyword is symbol, so need the symbol first
                 :map)
-               ((and (symbolp (first raw-data))
-                     (keywordp (second raw-data)))
+               ((symbolp (first raw-data))               
                 :data)
                (t :list)))
         (t :raw)

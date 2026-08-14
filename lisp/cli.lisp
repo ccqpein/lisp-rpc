@@ -4,29 +4,29 @@
 
 (in-package :lisp-rpc-cli)
 
-(defun generate-cmd-options ()
+(defun gen-cmd-options ()
   (list
    (clingon:make-option
     :string
-    :description "Spec file path (e.g. spec.lisp)"
+    :description "Path to specification file (e.g., spec.lisp)"
     :short-name #\s
     :long-name "spec"
     :key :spec)
    (clingon:make-option
     :string
-    :description "Output directory path for generated project"
+    :description "Output directory for the generated project"
     :short-name #\o
     :long-name "output"
     :initial-value "./output/"
     :key :output)))
 
-(defun generate-cmd-handler (cmd)
+(defun gen-cmd-handler (cmd)
   (let ((spec-file (or (clingon:getopt cmd :spec)
                        (first (clingon:command-arguments cmd))))
         (output-dir (clingon:getopt cmd :output)))
     (if (or (null spec-file) (string= spec-file ""))
         (progn
-          (format *error-output* "Error: Spec file is required.~%~%")
+          (format *error-output* "Error: Missing required specification file argument <SPEC-FILE>.~%~%")
           (clingon:print-usage-and-exit cmd t))
         (handler-case
             (multiple-value-bind (asd-path lib-path)
@@ -41,15 +41,16 @@
 (defun lisp-rpc-cli-command ()
   (clingon:make-command
    :name "lisp-rpc-gen"
-   :description "Code generator for Lisp-RPC specifications"
+   :description "Code generator CLI for Lisp-RPC specifications"
    :version "0.0.1"
    :handler (lambda (cmd) (clingon:print-usage-and-exit cmd t))
    :sub-commands (list
                   (clingon:make-command
-                   :name "generate"
+                   :name "gen"
+                   :aliases '("generate")
                    :description "Generate a Lisp project from a spec file"
-                   :options (generate-cmd-options)
-                   :handler #'generate-cmd-handler))))
+                   :options (gen-cmd-options)
+                   :handler #'gen-cmd-handler))))
 
 (defun main ()
   (clingon:run (lisp-rpc-cli-command)))

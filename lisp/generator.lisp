@@ -129,7 +129,7 @@ Return the function and the name of the type"
                                      ;; anonymous type
                                      ((typep tt 'cons)
                                       (let* ((router-result (def-funs-router name k tt)))
-                                        (format t "router-result: ~a~%" router-result)
+                                        ;;(format t "router-result: ~a~%" router-result)
                                         (funcall (first router-result) (second router-result) tt stream)
                                         (list nil :type (second router-result))))
                                      ;; default
