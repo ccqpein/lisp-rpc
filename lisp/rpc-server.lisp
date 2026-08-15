@@ -3,7 +3,7 @@
   (:export #:rpc-server
            #:make-rpc-server
            #:rpc-server-p
-           #:rpc-server-host
+           #:rpc-server-address
            #:rpc-server-port
            #:rpc-server-handlers
            #:rpc-server-handler-object
@@ -21,8 +21,8 @@
 
 (defstruct rpc-server
   "RPC server wrapping Woo HTTP server."
-  (host "127.0.0.1" :type string)
-  (port 5000 :type integer)
+  (address "127.0.0.1" :type string)
+  (port 5432 :type integer)
   (handlers (make-hash-table :test 'eq))
   handler-object
   worker-thread)
@@ -77,10 +77,10 @@
         (setf (rpc-server-worker-thread server)
               (bt:make-thread (lambda ()
                                 (woo:run app
-                                         :host (rpc-server-host server)
+                                         :address (rpc-server-address server)
                                          :port (rpc-server-port server)))))
         (woo:run app
-                 :host (rpc-server-host server)
+                 :address (rpc-server-address server)
                  :port (rpc-server-port server)))))
 
 (defun stop-server (server)

@@ -107,7 +107,7 @@ The Common Lisp RPC server runs on *Woo* (an asynchronous, high-performance HTTP
 | ~lisp-rpc-server:rpc-server~                | Structure representing Woo-backed RPC server               |
 | ~lisp-rpc-server:make-rpc-server~           | Constructor for ~rpc-server~ struct                          |
 | ~lisp-rpc-server:rpc-server-p~              | Predicate for ~rpc-server~ struct                            |
-| ~lisp-rpc-server:rpc-server-host~           | Accessor for server host IP                                |
+| ~lisp-rpc-server:rpc-server-address~        | Accessor for server bind address IP                      |
 | ~lisp-rpc-server:rpc-server-port~           | Accessor for server port number                            |
 | ~lisp-rpc-server:rpc-server-handlers~       | Accessor for registered handlers hash-table                |
 | ~lisp-rpc-server:rpc-server-handler-object~ | Accessor for global handler object                         |

@@ -8,14 +8,25 @@
 
 (in-package :lisp-rpc-generator)
 
-(defun def-rpc-package (pkg-expression &optional stream)
+(defun def-rpc-package (pkg-expression &optional exports-or-stream stream)
   (unless (and (consp pkg-expression) (string-equal (symbol-name (first pkg-expression)) "def-rpc-package"))
     (error "first element of pkg-expression has to be def-rpc-package"))
-  (let* ((name (second pkg-expression))
-         (pkg (or (find-package name)
-                  (make-package name :use '(#:cl #:lisp-rpc-util)))))
-    (format stream "(defpackage ~a~%  (:use #:cl #:lisp-rpc-util))~%~%(in-package :~a)~%~%" name name)
-    pkg))
+  (let ((exports (if (streamp exports-or-stream) nil exports-or-stream))
+        (out-stream (if (streamp exports-or-stream) exports-or-stream stream))
+        (name (second pkg-expression)))
+    (let ((pkg (or (find-package name)
+                   (make-package name :use '(#:cl #:lisp-rpc-util)))))
+      (when exports
+        (export exports pkg))
+      (when out-stream
+        (format out-stream "(defpackage ~a~%  (:use #:cl #:lisp-rpc-util)" name)
+        (when exports
+          (format out-stream "~%  (:export")
+          (dolist (sym exports)
+            (format out-stream "~%   #:~a" (symbol-name sym)))
+          (format out-stream ")"))
+        (format out-stream ")~%~%(in-package :~a)~%~%" name name))
+      pkg)))
 
 (defun generate-asd (package-name &optional stream)
   "Generate ASDF system definition content for package-name."
@@ -29,6 +40,38 @@
     (format stream "  :depends-on (\"lisp-rpc\")~%")
     (format stream "  :components ((:file \"lib\")))~%")))
 
+(defun collect-struct-symbols (name args)
+  (let* ((pkg (symbol-package name))
+         (symbols (list name
+                        (intern (format nil "MAKE-~A" (symbol-name name)) pkg)
+                        (intern (format nil "~A-P" (symbol-name name)) pkg))))
+    (loop for (k tt-raw) on args by #'cddr do
+      (let ((tt (if (and (consp tt-raw) (eq (first tt-raw) 'quote))
+                    (eval tt-raw)
+                    tt-raw)))
+        (push (intern (format nil "~A-~A" (symbol-name name) (symbol-name k)) pkg) symbols)
+        (when (and (consp tt) (keywordp (first tt)))
+          (let ((sub-name (intern (format nil "~A-~A" (symbol-name name) (symbol-name k)) pkg)))
+            (setf symbols (append (collect-struct-symbols sub-name tt) symbols))))))
+    (delete-duplicates (nreverse symbols))))
+
+(defun collect-forms-exports (forms)
+  (let ((exports '()))
+    (dolist (form forms)
+      (let ((head-name (when (and (consp form) (symbolp (first form)))
+                         (symbol-name (first form)))))
+        (cond
+          ((string-equal head-name "def-msg")
+           (setf exports (append exports (collect-struct-symbols (second form) (cddr form)))))
+          ((string-equal head-name "def-rpc")
+           (let* ((name (second form))
+                  (req-raw (third form))
+                  (req-args (if (and (consp req-raw) (eq (first req-raw) 'quote))
+                                (eval req-raw)
+                                req-raw)))
+             (setf exports (append exports (collect-struct-symbols name req-args))))))))
+    (delete-duplicates exports)))
+
 (defun generate-project (spec-file-path output-dir-path)
   "Read spec file and generate a Lisp project directory containing .asd and lib.lisp."
   (ensure-directories-exist (uiop:ensure-directory-pathname output-dir-path))
@@ -40,6 +83,7 @@
                          (make-package package-name :use '(#:cl #:lisp-rpc-util))))
          (forms (let ((*package* target-pkg))
                   (uiop:read-file-forms spec-file-path)))
+         (exports (collect-forms-exports forms))
          (asd-path (merge-pathnames (format nil "~a.asd" pkg-str) (uiop:ensure-directory-pathname output-dir-path)))
          (lib-path (merge-pathnames "lib.lisp" (uiop:ensure-directory-pathname output-dir-path))))
     
@@ -52,7 +96,7 @@
           (let ((head-name (when (and (consp form) (symbolp (first form)))
                              (symbol-name (first form)))))
             (cond
-              ((string-equal head-name "def-rpc-package") (def-rpc-package form out))
+              ((string-equal head-name "def-rpc-package") (def-rpc-package form exports out))
               ((string-equal head-name "def-msg") (def-msg form out))
               ((string-equal head-name "def-rpc") (def-rpc form out))
               (t (error "Unknown spec form: ~S" form)))))))
