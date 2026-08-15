@@ -36,24 +36,49 @@ This generates the ~demo~ package code.
 
 The Common Lisp RPC server runs on *Woo* (an asynchronous, high-performance HTTP server built on libev).
 
+After generated the code from [[file:examples/spec-demo.lisp][spec-demo.lisp]], there wll be a output folder contains system named demo.
+
 *** Server Example:
 
+Let's make a ~server.lisp~ file, like
+
 #+begin_src lisp
+  (load "./output/demo.asd") ;; read the demo asd
+  
+  (ql:quickload '("lisp-rpc" "demo")) ;; load them
+
   (use-package :lisp-rpc-server)
+  (use-package :demo)
 
   ;; 1. Initialize server
-  (defparameter *server* (make-rpc-server :port 5000))
+  (defparameter *server* (make-rpc-server))
 
   ;; 2. Register handler (validated against rpc-endpoint-p)
-  (register-rpc-handler *server* 'demo:get-book
-    (lambda (req)
-      ;; req is automatically deserialized into a #S(DEMO:GET-BOOK ...) struct
-      (demo:make-book-info
-       :title (demo:get-book-title req)
-       :id "12345")))
+  (register-rpc-handler *server*
+                        'demo:get-book
+                        (lambda (req)
+                          ;; req is automatically deserialized into a
+                          ;; #S(DEMO:GET-BOOK ...) struct
+                          (demo:make-book-info
+                           :title (demo:get-book-title req)
+                           :id "12345")))
 
   ;; 3. Start server
   (start-server *server*)
+#+end_src
+
+Then run it with ~sbcl~
+
+#+begin_src shell 
+  sbcl --load ./server.lisp
+#+end_src
+
+Then test it with:
+
+#+begin_src shell
+  curl -X POST http://localhost:5432 \
+       -H "Content-Type: text/plain" \
+       -d '(GET-BOOK :TITLE "Land of Lisp" :VERSION "1.0" :LANG (:LANG "en" :ENCODING 1))'
 #+end_src
 
 * APIs
