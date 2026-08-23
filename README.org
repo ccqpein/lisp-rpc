@@ -37,7 +37,7 @@ Lisp-RPC supports standard Lisp-like data structures:
 
 * Lisp-RPC Spec
 
-Check the [[file:example-specs/Spec.org][Spec.org]] for more details.
+Check the [[https://lisp-rpc.ccqpein.me][lisp-rpc spec]] for more details.
 
 * Project Structure
 
