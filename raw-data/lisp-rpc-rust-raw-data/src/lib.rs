@@ -67,10 +67,22 @@ pub trait GetAbleData {
     fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data>;
 }
 
+/// check if it is `nil`
 pub fn is_nil_symbol(e: &Expr) -> bool {
     match e {
         Expr::Atom(a) => match &a.value {
             TypeValue::Symbol(s) if s.to_lowercase().as_str() == "nil" => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// check if it is the `t`
+pub fn is_t_symbol(e: &Expr) -> bool {
+    match e {
+        Expr::Atom(a) => match &a.value {
+            TypeValue::Symbol(s) if s.to_lowercase().as_str() == "t" => true,
             _ => false,
         },
         _ => false,
@@ -131,8 +143,12 @@ impl Data {
                 }
             }
             Expr::Atom(a) => match &a.value {
+                // only t symbol can be the value
+                sy @ TypeValue::Symbol(x) if x.to_lowercase() == "t" => Ok(Self::Value(sy.clone())),
+
+                // else symbol not support yet
                 TypeValue::Symbol(_) => {
-                    error!("symbol cannot be data");
+                    error!("this symbol cannot be data");
                     Err(anyhow!(DataError {
                         msg: format!("cannot generate Data from the symbol {:?}", a),
                         err_type: DataErrorType::InvalidInput,
