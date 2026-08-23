@@ -125,7 +125,7 @@ impl Data {
                             }) => Ok(Self::Map(MapData::from_expr(e)?)),
 
                             // List data, list of atom or list of other expr data
-                            Expr::Atom(Atom { .. }) | Expr::List(_) => {
+                            Expr::Atom(Atom { .. }) | Expr::List(_) | Expr::Quote(_) => {
                                 Ok(Self::List(ListData::from_expr(e)?))
                             }
 
