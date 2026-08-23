@@ -2,6 +2,10 @@
 
 Lisp-RPC is a lightweight, S-expression-based Remote Procedure Call protocol designed for simplicity and flexibility. It supports two primary modes of operation to balance dynamic communication with type safety and performance.
 
+Other implements:
+
++ Lisp version: [[https://github.com/ccqpein/lisp-rpc.cl][lisp-rpc.cl]]
+
 * Overview
 
 Similar to JSON-RPC, Lisp-RPC defines data structures using Lisp S-expression syntax.
