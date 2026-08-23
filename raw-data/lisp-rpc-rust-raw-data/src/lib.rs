@@ -293,7 +293,10 @@ impl ExprData {
 
         if exprs.len() % 2 != 1 {
             return Err(anyhow!(DataError {
-                msg: "rest data has to be odd length elements".to_string(),
+                msg: format!(
+                    "rest data from {}... has to be odd length elements",
+                    expr.to_string().get(0..10).unwrap_or("")
+                ),
                 err_type: DataErrorType::InvalidInput,
             }));
         }
