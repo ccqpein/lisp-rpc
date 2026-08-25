@@ -89,6 +89,8 @@ pub fn is_t_symbol(e: &Expr) -> bool {
     }
 }
 
+pub type Value = TypeValue;
+
 /// define all the data, list, and map type that can be treat as Data
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Data {
@@ -102,7 +104,7 @@ pub enum Data {
     Map(MapData),
 
     /// Everything else is value
-    Value(TypeValue),
+    Value(Value),
 
     /// error if something happen
     Error(DataError),
@@ -476,6 +478,10 @@ impl ListData {
             "'({})",
             self.inner_data.iter().map(|d| d.to_string()).join(" ")
         )
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner_data.len()
     }
 }
 
