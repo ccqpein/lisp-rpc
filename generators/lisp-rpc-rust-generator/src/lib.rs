@@ -1,3 +1,4 @@
+//! Code generator library that transforms `.lisprpc` schema files into typed Rust client and server libraries.
 #![feature(iter_array_chunks)]
 #![feature(box_patterns)]
 
@@ -26,38 +27,49 @@ pub use generater::*;
 /// the rpc lib header
 static RPC_LIB_HEADER: &str = include_str!("../templates/rpc_lib_header");
 
+/// Target output file category for generated code.
 pub enum TargetFile {
+    /// Rust library source file.
     Lib,
+    /// Cargo manifest file.
     Cargo,
 }
 
-/// the trait for all spec
+/// Common trait for parsed RPC specification items.
 pub trait RPCSpec {
+    /// Returns the symbol name of this spec item.
     fn symbol_name(&self) -> String;
 
+    /// Casts this spec to [`RPCSpecLib`] if applicable.
     fn as_lib(&self) -> Option<&dyn RPCSpecLib> {
         None
     }
 
+    /// Casts this spec to [`RPCSpecCargo`] if applicable.
     fn as_cargo(&self) -> Option<&dyn RPCSpecCargo> {
         None
     }
 
+    /// Returns the target file type for this spec item.
     fn file_target(&self) -> TargetFile;
 }
 
+/// Trait for spec items that generate Rust library structs.
 pub trait RPCSpecLib: RPCSpec {
+    /// Generates structural definitions for Rust library code.
     fn generate_structs(&self) -> Result<Vec<GeneratedStruct>>;
 }
 
+/// Trait for spec items that generate Cargo.toml configuration.
 pub trait RPCSpecCargo: RPCSpec {
+    /// Generates Cargo manifest code using template file paths.
     fn gen_code_with_temp_files(&self, temp_file_paths: &[String]) -> Result<String>;
 
+    /// Generates Cargo manifest code using a pre-initialized [`Tera`] template engine.
     fn gen_code_with_tera(&self, templates: &Tera) -> Result<String>;
 }
 
-/// SpecFile struct for keep the status/states whiling parsing the spec file
-/// and the all specs of this file
+/// Represents a parsed `.lisprpc` specification file containing RPC declarations.
 #[derive(Default)]
 pub struct SpecFile {
     specs: Vec<Box<dyn RPCSpec>>,
@@ -80,10 +92,12 @@ impl<'s> IntoIterator for &'s SpecFile {
 }
 
 impl SpecFile {
+    /// Creates a new empty specification file.
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// Registers a parsed specification item, checking for duplicate symbol names.
     pub fn record_one(&mut self, spec: Box<dyn RPCSpec>) -> Result<()> {
         let sym_name = spec.symbol_name();
         self.specs.push(spec);
@@ -95,14 +109,17 @@ impl SpecFile {
         Ok(())
     }
 
+    /// Returns the target package name if declared.
     pub fn get_target_pkg_name(&self) -> Option<String> {
         self.target_pkg_name.clone()
     }
 
+    /// Sets the target package name for code generation.
     pub fn set_target_pkg_name(&mut self, name: String) {
         self.target_pkg_name = Some(name)
     }
 
+    /// Generates code using raw template strings.
     pub fn gen_code_raw_template(
         &self,
         output_path: &PathBuf,
@@ -114,7 +131,7 @@ impl SpecFile {
         self.gen_code(output_path, tera)
     }
 
-    /// write the cargo toml and all other lib files
+    /// Generates code using template files from disk.
     pub fn gen_code_with_templates_files(
         &self,
         output_path: &PathBuf,
@@ -230,6 +247,7 @@ impl SpecFile {
     }
 }
 
+/// Iterator over specification items in a [`SpecFile`].
 pub struct SpecFileIter<'s> {
     ind: usize,
     sf: &'s SpecFile,
@@ -249,17 +267,17 @@ impl<'s> Iterator for SpecFileIter<'s> {
 // help functions below
 //
 
-/// helper function kebab_to_pascal_case
+/// Converts a kebab-case string slice to PascalCase.
 pub fn kebab_to_pascal_case(s: &str) -> String {
     s.to_case(Case::Pascal)
 }
 
-/// helper function kebab_to_snake_case
+/// Converts a kebab-case string slice to snake_case.
 pub fn kebab_to_snake_case(s: &str) -> String {
     s.to_case(Case::Snake)
 }
 
-/// the function translate the type, the sym's first chat is upper because the kebab_to_pascal_case
+/// Maps Lisp-RPC primitive type symbol names to Rust type names.
 pub fn type_translate(sym: &str) -> String {
     match kebab_to_pascal_case(sym).as_str() {
         "Number" | "Int" => "i64".to_string(),
@@ -268,7 +286,7 @@ pub fn type_translate(sym: &str) -> String {
     }
 }
 
-/// read from file or url
+/// Reads template content from a local file path or remote HTTP/HTTPS URL.
 pub fn read_single_template_content(source: &str) -> Result<String> {
     if let Ok(url) = Url::parse(source) {
         if url.scheme() == "http" || url.scheme() == "https" {
@@ -286,6 +304,7 @@ pub fn read_single_template_content(source: &str) -> Result<String> {
     fs::read_to_string(path).map_err(|e| e.into())
 }
 
+/// Recursively scans and collects all file paths within a directory.
 pub fn get_all_file_paths_in_folder(folder_path: &Path) -> Result<Vec<PathBuf>> {
     if !folder_path.is_dir() {
         anyhow::bail!("Path is not a directory: {}", folder_path.display())
@@ -314,6 +333,7 @@ pub fn get_all_file_paths_in_folder(folder_path: &Path) -> Result<Vec<PathBuf>> 
     Ok(file_paths)
 }
 
+/// Recursively copies a directory to a new target directory in the current working directory.
 pub fn copy_folder_to_new_name(source_path: &Path, new_folder_name: &str) -> Result<()> {
     if !source_path.is_dir() {
         anyhow::bail!("Source path is not a directory: {}", source_path.display())

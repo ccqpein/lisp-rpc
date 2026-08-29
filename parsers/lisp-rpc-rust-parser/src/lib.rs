@@ -1,12 +1,19 @@
+//! Core tokenizer and parser for Lisp-RPC S-expressions.
+
 use anyhow::Result;
 use std::{collections::VecDeque, error::Error, io::Read};
 use tracing::error;
 
+/// Errors that can occur during Lisp S-expression parsing.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParserError {
+    /// Unexpected starting token encountered.
     InvalidStart,
+    /// Invalid or unexpected token encountered.
     InvalidToken(&'static str),
+    /// Corrupted or malformed data encountered.
     CorruptData(&'static str),
+    /// Unknown token encountered.
     UnknownToken,
 }
 
@@ -23,13 +30,17 @@ impl std::fmt::Display for ParserError {
 
 impl Error for ParserError {}
 
+/// Numeric value representing an integer or floating-point number.
 #[derive(Debug, Clone, Copy)]
 pub enum TypeValueNumber {
+    /// 64-bit signed integer.
     Int(i64),
+    /// 64-bit floating-point number.
     Float(f64),
 }
 
 impl TypeValueNumber {
+    /// Returns the integer value if this is a [`TypeValueNumber::Int`].
     pub fn to_int(&self) -> Option<i64> {
         match self {
             TypeValueNumber::Int(i) => Some(*i),
@@ -37,6 +48,7 @@ impl TypeValueNumber {
         }
     }
 
+    /// Returns the value as a 64-bit float.
     pub fn to_float(&self) -> Option<f64> {
         match self {
             TypeValueNumber::Float(f) => Some(*f),
@@ -107,15 +119,21 @@ impl std::ops::Add for TypeValueNumber {
     }
 }
 
+/// Primitive atom value types in Lisp-RPC expressions.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum TypeValue {
+    /// Lisp symbol identifier.
     Symbol(String),
+    /// String literal.
     String(String),
+    /// Keyword identifier prefixed with a colon.
     Keyword(String),
+    /// Numeric literal value.
     Number(TypeValueNumber),
 }
 
 impl TypeValue {
+    /// Formats the type value as an S-expression token string.
     pub fn to_string(&self) -> String {
         match self {
             TypeValue::Symbol(s) => s.clone(),
@@ -125,8 +143,7 @@ impl TypeValue {
         }
     }
 
-    /// Kind of the same as to_string except wont have double quotes
-    /// for string
+    /// Extracts the unquoted string content if this is a [`TypeValue::String`].
     pub fn get_string(&self) -> Result<String> {
         match self {
             TypeValue::String(s) => Ok(s.to_string()),
@@ -134,6 +151,7 @@ impl TypeValue {
         }
     }
 
+    /// Creates a [`TypeValue::Symbol`] if the string contains no whitespace.
     pub fn make_symbol(s: &str) -> Result<Self> {
         if s.contains([' ']) {
             Err(anyhow::anyhow!(ParserError::CorruptData(
@@ -144,6 +162,7 @@ impl TypeValue {
         }
     }
 
+    /// Returns the integer value if this is a [`TypeValue::Number`] containing an integer.
     pub fn to_int(&self) -> Option<i64> {
         match self {
             TypeValue::Number(type_value_number) => type_value_number.to_int(),
@@ -151,6 +170,7 @@ impl TypeValue {
         }
     }
 
+    /// Returns the floating-point value if this is a [`TypeValue::Number`].
     pub fn to_float(&self) -> Option<f64> {
         match self {
             TypeValue::Number(type_value_number) => type_value_number.to_float(),
@@ -159,36 +179,43 @@ impl TypeValue {
     }
 }
 
+/// An atomic value token in a Lisp S-expression.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Atom {
+    /// The inner typed value of the atom.
     pub value: TypeValue,
 }
 
 impl Atom {
+    /// Creates an atom containing a symbol value.
     pub fn read(s: &str) -> Self {
         Self {
             value: TypeValue::Symbol(s.to_string()),
         }
     }
 
+    /// Creates an atom containing a string literal value.
     pub fn read_string(s: &str) -> Self {
         Self {
             value: TypeValue::String(s.to_string()),
         }
     }
 
+    /// Creates an atom containing a keyword value.
     pub fn read_keyword(s: &str) -> Self {
         Self {
             value: TypeValue::Keyword(s.to_string()),
         }
     }
 
+    /// Creates an atom containing a numeric value.
     pub fn read_number(_s: &str, n: TypeValueNumber) -> Self {
         Self {
             value: TypeValue::Number(n),
         }
     }
 
+    /// Returns `true` if the atom contains a string value.
     pub fn is_string(&self) -> bool {
         match self.value {
             TypeValue::String(_) => true,
@@ -196,22 +223,28 @@ impl Atom {
         }
     }
 
+    /// Formats the atom as an S-expression token string.
     pub fn to_string(&self) -> String {
         self.value.to_string()
     }
 }
 
+/// A parsed Lisp-RPC S-expression node.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expr {
+    /// Atomic value node.
     Atom(Atom),
+    /// S-expression list node `(...)`.
     List(Vec<Expr>),
+    /// Quoted expression node `'...`.
     Quote(Box<Expr>),
 
-    /// Comment
+    /// Comment node `;...`.
     Comment(String),
 }
 
 impl Expr {
+    /// Formats the expression tree as an S-expression string.
     pub fn to_string(&self) -> String {
         match self {
             Expr::Atom(atom) => atom.to_string(),
@@ -229,6 +262,7 @@ impl Expr {
         }
     }
 
+    /// Returns a reference to the element at index `ind` if this is an [`Expr::List`].
     pub fn nth(&self, ind: usize) -> Option<&Self> {
         match self {
             Expr::List(exprs) => exprs.get(ind),
@@ -236,6 +270,7 @@ impl Expr {
         }
     }
 
+    /// Returns an iterator over child expressions if this is an [`Expr::List`].
     pub fn iter(&self) -> Option<impl Iterator<Item = &Expr>> {
         match self {
             Expr::List(exprs) => Some(exprs.iter()),
@@ -243,6 +278,7 @@ impl Expr {
         }
     }
 
+    /// Returns `true` if this expression is an [`Expr::Comment`].
     pub fn is_comment(&self) -> bool {
         match self {
             Expr::Comment(_) => true,
@@ -250,7 +286,7 @@ impl Expr {
         }
     }
 
-    /// Clean all comment expr from List. Unwrap List directly
+    /// Returns an iterator yielding non-comment expressions from an [`Expr::List`].
     pub fn filter_out_all_comments(&self) -> Result<impl Iterator<Item = &Expr>> {
         match self {
             Expr::List(_) => match self.iter() {
@@ -268,13 +304,15 @@ impl std::fmt::Display for Expr {
     }
 }
 
+/// Tokenizer and parser for Lisp S-expressions.
 pub struct Parser {
-    /// will read number if this field is true. default is true
-    /// turn it off will treat the number as the symbol in Expr
+    /// Will read numbers if true; otherwise numbers are parsed as symbols.
     read_number_config: bool,
 
+    /// Token queue populated by [`tokenize`](Parser::tokenize).
     pub tokens: VecDeque<String>,
 
+    /// Parsed expression nodes populated by [`parse`](Parser::parse).
     pub exprs: Vec<Expr>,
 }
 
@@ -289,6 +327,7 @@ impl Default for Parser {
 }
 
 impl Parser {
+    /// Creates a new parser instance with default configuration.
     pub fn new() -> Self {
         Self {
             read_number_config: true,
@@ -297,13 +336,13 @@ impl Parser {
         }
     }
 
-    /// set the parser read_number config
+    /// Configures whether numeric strings are parsed into numbers rather than symbols.
     pub fn config_read_number(mut self, v: bool) -> Self {
         self.read_number_config = v;
         self
     }
 
-    /// tokenize the source code
+    /// Tokenizes the input reader into the token queue.
     pub fn tokenize(&mut self, mut source_code: impl Read) -> Result<()> {
         let mut buf = [0; 1];
         let mut cache = vec![];
@@ -345,7 +384,7 @@ impl Parser {
         Ok(())
     }
 
-    /// parse all tokens in parser to exprs
+    /// Parses all tokens in the parser into expression nodes.
     pub fn parse(&mut self) -> Result<(), ParserError> {
         let mut res = vec![];
 
@@ -383,7 +422,7 @@ impl Parser {
         Ok(())
     }
 
-    /// only parse one expr from inner tokens
+    /// Parses a single expression from the token queue.
     pub fn parse_one(&mut self) -> Result<(), ParserError> {
         loop {
             match self.tokens.front() {
@@ -426,7 +465,7 @@ impl Parser {
         }
     }
 
-    /// choose which read function
+    /// Returns the appropriate parse function for the given opening token.
     pub fn read_router(
         &self,
         token: &str,
@@ -441,6 +480,7 @@ impl Parser {
         }
     }
 
+    /// Reads an atom expression from the token queue.
     pub fn read_atom(&mut self) -> Result<Expr, ParserError> {
         let token = self
             .tokens
@@ -469,6 +509,7 @@ impl Parser {
         Ok(Expr::Atom(Atom::read(&token)))
     }
 
+    /// Reads a quoted expression from the token queue.
     pub fn read_quote(&mut self) -> Result<Expr, ParserError> {
         self.tokens
             .pop_front()
@@ -482,7 +523,7 @@ impl Parser {
         Ok(Expr::Quote(Box::new(res)))
     }
 
-    /// start from '\('
+    /// Reads a list expression enclosed in parentheses.
     pub fn read_exp(&mut self) -> Result<Expr, ParserError> {
         let mut res = vec![];
         self.tokens.pop_front();
@@ -505,7 +546,7 @@ impl Parser {
         Ok(Expr::List(res))
     }
 
-    /// start with "
+    /// Reads a string literal enclosed in double quotes.
     pub fn read_string(&mut self) -> Result<Expr, ParserError> {
         self.tokens.pop_front();
 
@@ -534,7 +575,7 @@ impl Parser {
         Ok(Expr::Atom(Atom::read_string(&res)))
     }
 
-    /// start with :
+    /// Reads a keyword token prefixed with a colon.
     pub fn read_keyword(&mut self) -> Result<Expr, ParserError> {
         self.tokens.pop_front();
 
@@ -546,7 +587,7 @@ impl Parser {
         Ok(Expr::Atom(Atom::read_keyword(&token)))
     }
 
-    /// start with ;
+    /// Reads a comment line prefixed with a semicolon.
     pub fn read_comment(&mut self) -> Result<Expr, ParserError> {
         //dbg!(&tokens);
         self.tokens.pop_front();
@@ -585,6 +626,7 @@ impl Parser {
 }
 
 impl Parser {
+    /// Returns an iterator over all parsed expression nodes.
     pub fn iter_expr(&self) -> impl Iterator<Item = &Expr> {
         self.exprs.iter()
     }

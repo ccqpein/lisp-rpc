@@ -1,3 +1,6 @@
+//! Helper macros for implementing [`crate::IntoData`] on primitive number types.
+
+/// Implements [`crate::IntoData`] for integer primitive types.
 #[macro_export]
 macro_rules! impl_into_data_for_numbers_int {
     ($($type:ty),*) => {
@@ -11,6 +14,7 @@ macro_rules! impl_into_data_for_numbers_int {
     };
 }
 
+/// Implements [`crate::IntoData`] for floating-point primitive types.
 #[macro_export]
 macro_rules! impl_into_data_for_numbers_float {
     ($($type:ty),*) => {

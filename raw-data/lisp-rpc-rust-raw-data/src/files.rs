@@ -1,15 +1,19 @@
+//! File-level utilities for reading and parsing Lisp-RPC data files.
+
 use anyhow::{Context, Result};
 use std::{collections::HashMap, fs::File, path::PathBuf};
 
 use crate::{Data, ExprData};
 
+/// A collection of S-expression data records parsed from a file.
 #[derive(Default, Debug)]
 pub struct DataFile {
-    /// all data (expr data) in this file
+    /// All data records in this file.
     datas: Vec<ExprData>,
 }
 
 impl DataFile {
+    /// Parses all S-expression data records from the specified file path.
     pub fn new(file: PathBuf) -> Result<Self> {
         let file = File::open(&file)
             .map_err(|e| anyhow::anyhow!("Failed to open config file at {:?}: {}", file, e))?;
@@ -32,8 +36,7 @@ impl DataFile {
         Ok(df)
     }
 
-    /// generate the table of this file, name -> expr data
-    /// caution: cannot support the multiple same name data
+    /// Generates a map indexing each [`ExprData`] record by its name identifier.
     pub fn gen_table(&self) -> HashMap<String, &ExprData> {
         self.datas
             .iter()
@@ -41,6 +44,7 @@ impl DataFile {
             .collect()
     }
 
+    /// Returns an iterator over references to the data records in this file.
     pub fn iter(&self) -> impl Iterator<Item = &ExprData> {
         self.into_iter()
     }

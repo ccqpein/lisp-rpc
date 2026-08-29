@@ -1,4 +1,4 @@
-//! the mod that handle def-msg expr
+//! Parser and code generation handler for `def-msg` schema declarations.
 
 use std::error::Error;
 
@@ -27,9 +27,7 @@ impl std::fmt::Display for DefMsgError {
 
 impl Error for DefMsgError {}
 
-#[doc = r#"the struct of def-msg expression
-(def-msg name :key value-type)
-"#]
+/// Represents a parsed `(def-msg name :key type ...)` specification declaration.
 #[derive(Debug, Eq, PartialEq)]
 pub struct DefMsg {
     msg_name: String,
@@ -42,6 +40,7 @@ pub struct DefMsg {
 }
 
 impl DefMsg {
+    /// Creates a new [`DefMsg`] specification item.
     pub fn new(msg_name: &str, rest_expr: &[Expr], ty: RPCDataType) -> Result<Self> {
         if rest_expr.iter().array_chunks().all(|[k, _]| {
             matches!(
@@ -64,7 +63,7 @@ impl DefMsg {
         }
     }
 
-    /// make new def msg from str
+    /// Parses a [`DefMsg`] declaration from a string slice.
     pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         use std::io::Cursor;
 
@@ -79,6 +78,7 @@ impl DefMsg {
         Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }
 
+    /// Returns `true` if the expression is a `def-msg` list expression.
     pub fn if_def_msg_expr(expr: &Expr) -> bool {
         match &expr {
             Expr::List(e) => match &e[0] {
@@ -92,8 +92,7 @@ impl DefMsg {
         }
     }
 
-    /// make new DefMsg from the one expr
-    /// (def-msg name :keyword value)
+    /// Parses a [`DefMsg`] declaration from an [`Expr`].
     pub fn from_expr(expr: &Expr) -> Result<Self> {
         let rest_expr: &[Expr];
         if Self::if_def_msg_expr(expr) {
@@ -129,7 +128,7 @@ impl DefMsg {
         Self::new(name, &rest_expr[1..], RPCDataType::Msg)
     }
 
-    /// convet this spec to GeneratedStructs (self and the anonymity type)
+    /// Transforms this message specification into [`GeneratedStruct`] definitions.
     pub fn create_gen_structs(&self) -> Result<Vec<GeneratedStruct>> {
         let mut res = vec![];
         let mut fields = vec![];
@@ -169,7 +168,7 @@ impl DefMsg {
                             let new_msg_name = self.msg_name.to_string() + "-" + f;
                             res.append(
                                 &mut Self::new(&new_msg_name, inner_exprs, RPCDataType::Map)?
-                                    .create_gen_structs()?,
+                                     .create_gen_structs()?,
                             );
                             fields.push(GeneratedField::new(
                                 kebab_to_snake_case(f),
@@ -241,6 +240,7 @@ impl DefMsg {
         Ok(res)
     }
 
+    /// Generates Rust code for this message using template files from disk.
     pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
@@ -250,7 +250,7 @@ impl DefMsg {
         Ok(bucket.join("\n\n"))
     }
 
-    /// Generate code with the exist tera instance
+    /// Generates Rust code for this message using an existing [`Tera`] instance.
     pub fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {

@@ -1,6 +1,6 @@
-//! The pure rpc data like (get-book :title "hello world" :version "1984").
+//! Core raw data structures for dynamic, schema-free S-expression parsing and manipulation in Lisp-RPC Plain Mode.
 //!
-//! The first symbol is the name of data, and everything else are the "arguments"
+//! Named S-expression data structures take the form `(name :key1 val1 :key2 val2)`.
 #![feature(iter_array_chunks)]
 
 pub mod files;
@@ -14,12 +14,14 @@ use tracing::error;
 
 use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue, TypeValueNumber};
 
+/// The category of a [`DataError`].
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum DataErrorType {
     InvalidInput,
     CorruptedData,
 }
 
+/// Error type for dynamic data operations and conversions.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DataError {
     msg: String,
@@ -34,13 +36,17 @@ impl std::fmt::Display for DataError {
 
 impl Error for DataError {}
 
+/// Trait for constructing a data structure from a parsed Lisp [`Expr`].
 pub trait FromExpr {
+    /// Converts a reference to an [`Expr`] into `Self`.
     fn from_expr(expr: &Expr) -> Result<Self>
     where
         Self: Sized;
 }
 
+/// Trait for tokenizing and parsing a data structure directly from a string slice.
 pub trait FromStr: FromExpr {
+    /// Parses `Self` from a string slice using the provided [`Parser`].
     fn from_str(p: &mut Parser, s: &str) -> Result<Self>
     where
         Self: Sized,
@@ -53,7 +59,9 @@ pub trait FromStr: FromExpr {
     }
 }
 
+/// Trait for converting a value into dynamic Lisp-RPC [`Data`].
 pub trait IntoData {
+    /// Converts `self` into a [`Data`] representation.
     fn into_rpc_data(&self) -> Data;
 }
 
@@ -63,11 +71,13 @@ impl_into_data_for_numbers_int!(i8, i16, i32, i64);
 // impl the into data for several type
 impl_into_data_for_numbers_float!(f32, f64);
 
+/// Trait for data structures that support key-based field lookups.
 pub trait GetAbleData {
+    /// Retrieves a reference to the [`Data`] field matching the given key name.
     fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data>;
 }
 
-/// check if it is `nil`
+/// Returns `true` if the given expression is a symbol representing `nil`.
 pub fn is_nil_symbol(e: &Expr) -> bool {
     match e {
         Expr::Atom(a) => match &a.value {
@@ -78,7 +88,7 @@ pub fn is_nil_symbol(e: &Expr) -> bool {
     }
 }
 
-/// check if it is the `t`
+/// Returns `true` if the given expression is a symbol representing `t`.
 pub fn is_t_symbol(e: &Expr) -> bool {
     match e {
         Expr::Atom(a) => match &a.value {
@@ -89,28 +99,30 @@ pub fn is_t_symbol(e: &Expr) -> bool {
     }
 }
 
+/// Type alias for [`TypeValue`].
 pub type Value = TypeValue;
 
-/// define all the data, list, and map type that can be treat as Data
+/// Core enum representing dynamic Lisp-RPC data, lists, maps, and primitive values.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Data {
-    /// Data is (data-name keyword-data-pairs...)
+    /// Named S-expression data structure `(name :key value ...)`.
     Data(ExprData),
 
-    /// List is '(1 2 3 4 "d")
+    /// Quoted sequence `'("a" "b" 1)`.
     List(ListData),
 
-    /// Map is '(:a 1 :b 3)
+    /// Quoted key-value map `'(:a 1 :b 2)`.
     Map(MapData),
 
-    /// Everything else is value
+    /// Primitive atom value (symbol, string, keyword, or number).
     Value(Value),
 
-    /// error if something happen
+    /// Error encountered during data operations.
     Error(DataError),
 }
 
 impl Data {
+    /// Converts an [`Expr`] into a [`Data`] instance.
     pub fn from_expr(e: &Expr) -> Result<Self> {
         match e {
             Expr::List(_) => Ok(Self::Data(ExprData::from_expr(e)?)),
@@ -166,6 +178,7 @@ impl Data {
         }
     }
 
+    /// Serializes the data into a Lisp-RPC S-expression string.
     pub fn to_string(&self) -> String {
         match self {
             Data::Data(value_data) => value_data.to_string(),
@@ -176,7 +189,7 @@ impl Data {
         }
     }
 
-    /// Get the string value from Data::Value, no double quotes than to_string
+    /// Extracts the unquoted string value from [`Data::Value`].
     pub fn get_string(&self) -> Result<String> {
         match self {
             Data::Value(type_value) => type_value.get_string(),
@@ -184,8 +197,7 @@ impl Data {
         }
     }
 
-    /// generate the root data.
-    /// root data has to be expr
+    /// Constructs a new root named data expression from a name and key-value pairs.
     pub fn new<'a>(
         name: &str,
         kv_pairs: impl Iterator<Item = (&'a str, &'a dyn IntoData)>,
@@ -203,7 +215,7 @@ impl Data {
         )?))
     }
 
-    /// read the root data.
+    /// Parses a root named data expression from a string slice.
     pub fn from_root_str(s: &str, parser: Option<&mut Parser>) -> Result<Self> {
         let p = match parser {
             Some(p) => p,
@@ -223,7 +235,7 @@ impl Data {
         }
     }
 
-    /// Get the TypeValue from Data
+    /// Returns a reference to the inner [`TypeValue`] if this is a [`Data::Value`].
     pub fn as_value(&self) -> Option<&TypeValue> {
         match self {
             Data::Value(type_value) => Some(type_value),
@@ -231,12 +243,12 @@ impl Data {
         }
     }
 
-    /// Get the TypeValue::Number i64
+    /// Returns the integer value if this is a [`Data::Value`] containing an integer.
     pub fn to_int(&self) -> Option<i64> {
         self.as_value().map_or(None, |tv| tv.to_int())
     }
 
-    /// Get the TypeValue::Number f64
+    /// Returns the floating-point value if this is a [`Data::Value`] containing a number.
     pub fn to_float(&self) -> Option<f64> {
         self.as_value().map_or(None, |tv| tv.to_float())
     }
@@ -275,14 +287,17 @@ impl GetAbleData for Data {
     }
 }
 
+/// Named S-expression data structure containing key-value argument pairs.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ExprData {
     name: String,
+    /// The keyword-value argument pairs of the data expression.
     pub rest_args: Vec<(Expr, Data)>,
     inner_map: OnceCell<DataMap>,
 }
 
 impl ExprData {
+    /// Parses an [`ExprData`] from a list [`Expr`].
     pub fn from_expr(expr: &Expr) -> Result<Self> {
         let exprs = expr.filter_out_all_comments()?.collect::<Vec<_>>();
 
@@ -344,7 +359,7 @@ impl ExprData {
         })
     }
 
-    /// make new expr data
+    /// Creates a new [`ExprData`] with the given name and argument pairs.
     pub fn new<'a>(name: &str, rest_args: impl Iterator<Item = (Expr, Data)>) -> Result<Self> {
         let _ = TypeValue::make_symbol(name)?;
         Ok(Self {
@@ -354,12 +369,12 @@ impl ExprData {
         })
     }
 
-    /// the name of the expr, always the first element depending on the spec
+    /// Returns the symbol name of the data expression.
     pub fn get_name(&self) -> &str {
         &self.name
     }
 
-    /// Generate the data string
+    /// Serializes the expression into an S-expression string.
     pub fn to_string(&self) -> String {
         format!(
             "({} {})",
@@ -371,6 +386,7 @@ impl ExprData {
         )
     }
 
+    /// Retrieves a field value by its keyword name.
     pub fn get(&self, k: &str) -> Option<&Data> {
         let m = self
             .inner_map
@@ -424,6 +440,7 @@ impl IntoIterator for ExprData {
     }
 }
 
+/// Quoted sequence data structure `'("a" 1 2)`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ListData {
     inner_data: Vec<Data>,
@@ -447,6 +464,7 @@ impl IntoData for ListData {
 }
 
 impl ListData {
+    /// Parses a [`ListData`] from a quoted list [`Expr`].
     pub fn from_expr(expr: &Expr) -> Result<Self> {
         match expr {
             Expr::Quote(expr) => match expr.as_ref() {
@@ -473,6 +491,7 @@ impl ListData {
         }
     }
 
+    /// Serializes the list into a quoted S-expression string.
     pub fn to_string(&self) -> String {
         format!(
             "'({})",
@@ -480,6 +499,7 @@ impl ListData {
         )
     }
 
+    /// Returns the number of elements in the list.
     pub fn len(&self) -> usize {
         self.inner_data.len()
     }
@@ -505,6 +525,7 @@ impl IntoIterator for ListData {
     }
 }
 
+/// Quoted key-value map data structure `'(:k1 v1 :k2 v2)`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MapData {
     kwrds: Vec<String>,
@@ -512,6 +533,7 @@ pub struct MapData {
 }
 
 impl MapData {
+    /// Parses a [`MapData`] from a quoted map [`Expr`].
     pub fn from_expr(expr: &Expr) -> Result<Self> {
         let mut kwrds = vec![];
         let map = match expr {
@@ -559,6 +581,7 @@ impl MapData {
         Ok(Self { kwrds, map })
     }
 
+    /// Serializes the map into a quoted S-expression string.
     pub fn to_string(&self) -> String {
         format!(
             "'({})",
@@ -579,14 +602,17 @@ impl MapData {
         )
     }
 
-    fn get(&self, k: &str) -> Option<&Data> {
+    /// Retrieves a value by its key name.
+    pub fn get(&self, k: &str) -> Option<&Data> {
         self.map.get(k)
     }
 
+    /// Returns an iterator over key-value pairs in the map.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &Data)> {
         self.map.iter()
     }
 
+    /// Returns the number of key-value pairs in the map.
     pub fn len(&self) -> usize {
         self.map.len()
     }

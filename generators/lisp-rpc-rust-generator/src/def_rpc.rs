@@ -1,3 +1,5 @@
+//! Parser and code generation handler for `def-rpc` schema declarations.
+
 use lisp_rpc_rust_parser::Parser;
 use std::io::Cursor;
 
@@ -27,18 +29,21 @@ impl std::fmt::Display for DefRPCError {
 
 impl Error for DefRPCError {}
 
+/// Represents a parsed `(def-rpc name '(:key type ...) 'return-type)` declaration.
 #[derive(Debug, Eq, PartialEq)]
 pub struct DefRPC {
+    /// The RPC command name identifier.
     pub rpc_name: String,
 
-    /// the keywords and their types pairs of request body
+    /// Keyword-type argument pairs for the RPC request.
     pub args: Vec<Expr>,
 
-    ///
+    /// Optional return type identifier.
     pub return_type: Option<String>,
 }
 
 impl DefRPC {
+    /// Parses a [`DefRPC`] declaration from a string slice.
     pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         let mut p = match parser {
             Some(p) => p,
@@ -51,6 +56,7 @@ impl DefRPC {
         Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }
 
+    /// Returns `true` if the expression is a `def-rpc` list expression.
     pub fn if_def_rpc_expr(expr: &Expr) -> bool {
         match &expr {
             Expr::List(e) => match &e[0] {
@@ -64,8 +70,7 @@ impl DefRPC {
         }
     }
 
-    /// make new DefRPC from the one expr
-    /// (def-rpc name '(:keyword value) 'return-value)
+    /// Parses a [`DefRPC`] declaration from an [`Expr`].
     pub fn from_expr(expr: &Expr) -> Result<Self> {
         let rest_expr: &[Expr];
 
@@ -139,7 +144,7 @@ impl DefRPC {
         })
     }
 
-    /// convet this spec to GeneratedStructs (self and the anonymity type)
+    /// Transforms this RPC specification into [`GeneratedStruct`] definitions.
     pub fn create_gen_structs(&self) -> Result<Vec<GeneratedStruct>> {
         let mut res = vec![];
         let mut fields = vec![];
@@ -253,6 +258,7 @@ impl DefRPC {
         Ok(res)
     }
 
+    /// Generates Rust code for this RPC using template files from disk.
     pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
@@ -262,7 +268,7 @@ impl DefRPC {
         Ok(bucket.join("\n\n"))
     }
 
-    /// Generate code with the exist tera instance
+    /// Generates Rust code for this RPC using an existing [`Tera`] instance.
     pub fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {

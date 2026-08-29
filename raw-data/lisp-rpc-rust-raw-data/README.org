@@ -1,0 +1,37 @@
+#+TITLE: Lisp-RPC Rust Raw Data
+
+Core raw data structures for dynamic, schema-free S-expression parsing and manipulation in Lisp-RPC Plain Mode.
+
+* Overview
+
+~lisp-rpc-rust-raw-data~ provides dynamic representations for Lisp-RPC S-expressions without requiring predefined schemas or generated types.
+
+* Key Types
+
+- ~Data~: Root enum representing any valid Lisp-RPC data element (expressions, lists, maps, atoms/values).
+- ~ExprData~: Named S-expression data structure: =(name :key value ...)=.
+- ~ListData~: Quoted sequence: ='(1 2 "three")=.
+- ~MapData~: Quoted key-value pairs: ='(:key value)=.
+- ~DataFile~: Parses and indexes multiple S-expression data records from a file.
+
+* Usage Example
+
+#+begin_src rust
+use lisp_rpc_rust_raw_data::{Data, GetAbleData, IntoData};
+
+// Create a raw RPC data expression: (get-book :title "The Hobbit" :year 1937)
+let rpc_data = Data::new(
+    "get-book",
+    [
+        ("title", &"The Hobbit" as &dyn IntoData),
+        ("year", &1937_i32 as &dyn IntoData),
+    ].into_iter(),
+).unwrap();
+
+// Serialize to S-expression string
+let raw_str = rpc_data.to_string();
+
+// Parse S-expression back to Data
+let parsed = Data::from_root_str(&raw_str, None).unwrap();
+let year = parsed.get("year").and_then(|d| d.to_int());
+#+end_src

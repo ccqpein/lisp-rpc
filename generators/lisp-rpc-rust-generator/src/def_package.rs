@@ -1,3 +1,5 @@
+//! Parser and code generation handler for `def-rpc-package` declarations.
+
 use lisp_rpc_rust_parser::Parser;
 use std::io::Cursor;
 
@@ -25,15 +27,15 @@ impl std::fmt::Display for DefPkgError {
 
 impl Error for DefPkgError {}
 
-#[doc = r#"the struct of def-rpc-package expression
-(def-rpc-package demo)
-"#]
+/// Represents a parsed `(def-rpc-package name)` declaration specifying the generated crate name.
 #[derive(Debug, Eq, PartialEq)]
 pub struct DefPkg {
+    /// The package identifier name.
     pub pkg_name: String,
 }
 
 impl DefPkg {
+    /// Returns `true` if the expression is a `def-rpc-package` list expression.
     pub fn if_def_pkg_expr(expr: &Expr) -> bool {
         match &expr {
             Expr::List(e) => match &e[0] {
@@ -47,6 +49,7 @@ impl DefPkg {
         }
     }
 
+    /// Parses a [`DefPkg`] declaration from an [`Expr`].
     pub fn from_expr(expr: &Expr) -> Result<Self> {
         let rest_expr: &[Expr];
         if Self::if_def_pkg_expr(expr) {
@@ -85,6 +88,7 @@ impl DefPkg {
         })
     }
 
+    /// Parses a [`DefPkg`] declaration from a string slice.
     pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
         let mut p = match parser {
             Some(p) => p,
@@ -97,6 +101,7 @@ impl DefPkg {
         Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }
 
+    /// Generates `Cargo.toml` manifest code using template files from disk.
     pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut tera = Tera::default();
         let mut context = tera::Context::new();
@@ -118,7 +123,7 @@ impl DefPkg {
             .context("render def package wrong")
     }
 
-    /// Generate code with the exist tera instance
+    /// Generates `Cargo.toml` manifest code using an existing [`Tera`] instance.
     fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
         let mut context = tera::Context::new();
         context.insert("package_name", &self.pkg_name);

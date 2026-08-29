@@ -1,13 +1,18 @@
+//! Deserializer implementation parsing Lisp-RPC S-expressions into Rust types.
+
 use crate::*;
 
 use convert_case::{Case, Casing};
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 
+/// Serde [`de::Deserializer`] for parsing Lisp-RPC S-expressions.
 pub struct LispRPCDeserializer<'de> {
+    /// The remaining input string slice being parsed.
     pub input: &'de str,
 }
 
 impl<'de> LispRPCDeserializer<'de> {
+    /// Creates a new deserializer from a string slice.
     pub fn from_str(input: &'de str) -> Self {
         LispRPCDeserializer { input }
     }

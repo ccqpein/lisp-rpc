@@ -1,3 +1,5 @@
+//! Serializer implementation transforming Rust data structures into Lisp-RPC S-expressions.
+
 use std::{
     collections::HashSet,
     error::Error as StdError,
@@ -12,28 +14,32 @@ use serde::ser::{
 
 use convert_case::{Case, Casing};
 
-/// Global registry of struct names that should be serialized as maps
+/// Global registry of struct names that should be serialized in map style `'(:key value)`.
 pub static GLOBAL_MAP_TYPES: LazyLock<RwLock<HashSet<&'static str>>> =
     LazyLock::new(|| RwLock::new(HashSet::new()));
 
-/// Register a struct name globally to always be serialized as a map
+/// Registers a struct name globally to always be serialized as a map.
 pub fn register_global_map_type(name: &'static str) {
     if let Ok(mut map) = GLOBAL_MAP_TYPES.write() {
         map.insert(name);
     }
 }
 
-/// Clear all globally registered map types
+/// Clears all globally registered map types.
 pub fn clear_global_map_types() {
     if let Ok(mut map) = GLOBAL_MAP_TYPES.write() {
         map.clear();
     }
 }
 
+/// Error type for serialization failures in Lisp-RPC.
 #[derive(Debug)]
 pub enum LispRPCSerializerError {
+    /// Custom error message.
     Msg(String),
+    /// Buffer overflow error message.
     BufferOverflow(String),
+    /// Operation or data type is not supported.
     NotSupport,
 }
 
@@ -68,24 +74,29 @@ impl serde::de::Error for LispRPCSerializerError {
     }
 }
 
+/// Formatting style for serializing structures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LispRPCStyle {
-    /// Standard struct: (name :field value)
+    /// Standard named struct format `(name :field value ...)`.
     Struct,
-    /// Map style: '(:field value)
+    /// Quoted anonymous map format `'(:field value ...)`.
     Map,
 }
 
-/// the serializer of Msg/RPC/List (Vec)/V RPCType
+/// Serde [`Serializer`] for Lisp-RPC S-expression formatting.
 pub struct LispRPCSerializer<'s> {
+    /// Destination byte buffer.
     pub output: &'s mut Vec<u8>,
+    /// Number of bytes written.
     pub pos: usize,
+    /// Current serialization style.
     pub style: LispRPCStyle,
-    /// Instance-specific registry of struct names that should be serialized as maps
+    /// Instance-specific registry of struct names that should be serialized as maps.
     pub map_types: HashSet<&'static str>,
 }
 
 impl<'s> LispRPCSerializer<'s> {
+    /// Creates a new serializer writing to the provided buffer.
     pub fn new(buffer: &'s mut Vec<u8>) -> Self {
         Self {
             output: buffer,
@@ -95,7 +106,7 @@ impl<'s> LispRPCSerializer<'s> {
         }
     }
 
-    /// Register a struct name to this instance to always be serialized as a map
+    /// Registers a struct name to this instance to always be serialized as a map.
     pub fn register_map_type(&mut self, name: &'static str) {
         self.map_types.insert(name);
     }

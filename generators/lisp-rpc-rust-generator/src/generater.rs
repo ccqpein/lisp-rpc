@@ -1,23 +1,35 @@
+//! Intermediate representation and code generation models for structs and fields.
+
 use super::*;
 use serde::Serialize;
 use tera::Context;
 
+/// Kind of data structure being generated.
 #[derive(Debug, Serialize, PartialEq, Eq, Clone)]
 pub enum RPCDataType {
+    /// Quoted anonymous map.
     Map,
+    /// Quoted list sequence.
     List,
+    /// Named message structure.
     Msg,
+    /// RPC command structure.
     Rpc,
 }
 
+/// A field in a generated Rust struct.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct GeneratedField {
+    /// The field identifier name.
     pub name: String,
+    /// The Rust type of the field.
     pub field_type: String,
+    /// Optional doc comment for the field.
     pub comment: Option<String>,
 }
 
 impl GeneratedField {
+    /// Creates a new [`GeneratedField`] validating against reserved keywords.
     pub fn new(name: String, field_type: String, comment: Option<String>) -> Result<Self> {
         const RESERVED_WORDS: &[&str] = &["type"];
 
@@ -33,27 +45,28 @@ impl GeneratedField {
     }
 }
 
-/// the GeneratedStruct is the middle layer between render and rpc spec (msg and rpc)
-/// def pkg is too simple, no need this
+/// Intermediate representation of a Rust struct to be rendered by templates.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct GeneratedStruct {
+    /// Struct identifier name in PascalCase.
     pub name: String,
+    /// List of struct fields.
     pub fields: Vec<GeneratedField>,
+    /// Optional doc comment for the struct.
     pub comment: Option<String>,
 
-    /// the original data name
-    /// for insert the impl block of gen_data
+    /// Original Lisp S-expression symbol name.
     pub data_name: String,
 
-    /// different types have different data format
-    /// this for detect which is which
+    /// Structural type category.
     pub rpc_type: RPCDataType,
 
-    /// For def-rpc, this is the return type
+    /// Optional return type for RPC commands.
     pub return_type: Option<String>,
 }
 
 impl GeneratedStruct {
+    /// Creates a new [`GeneratedStruct`] model.
     pub fn new(
         data_name: &str,
         fields: Vec<GeneratedField>,
@@ -74,6 +87,7 @@ impl GeneratedStruct {
         }
     }
 
+    /// Populates a [`Context`] with struct metadata for template rendering.
     pub fn insert_template(&self, ctx: &mut Context) {
         ctx.insert("name", &self.name);
         ctx.insert("fields", &self.fields);
@@ -100,6 +114,7 @@ impl GeneratedStruct {
         }
     }
 
+    /// Renders the struct code using template files from disk.
     pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
         let mut tera = Tera::default();
         let mut context = Context::new();
@@ -126,6 +141,7 @@ impl GeneratedStruct {
         Ok(result)
     }
 
+    /// Renders the struct code using an existing [`Tera`] instance.
     pub fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
         let mut context = Context::new();
 

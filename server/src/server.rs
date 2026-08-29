@@ -1,3 +1,5 @@
+//! Core RPC dispatch engine for registering synchronous and asynchronous handlers.
+
 use anyhow::{Result, anyhow};
 use lisp_rpc_rust_serializer::lisp_rpc_from_str;
 use serde::Serialize;
@@ -10,12 +12,13 @@ use std::sync::Arc;
 
 use super::*;
 
-/// A trait that captures the relationship between a request type T and its response.
+/// Synchronous RPC handler function trait.
 pub trait RpcFunc<T, R>: Send + Sync + 'static
 where
     T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn<Return = R> + 'static,
     R: Serialize + ToRPCType + 'static,
 {
+    /// Executes the RPC handler with the decoded request.
     fn call(&self, req: T) -> Result<R>;
 }
 
@@ -30,13 +33,15 @@ where
     }
 }
 
-/// A trait that captures the relationship between a request type T and its async response.
+/// Asynchronous RPC handler function trait.
 pub trait AsyncRpcFunc<T, R>: Send + Sync + 'static
 where
     T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn<Return = R> + 'static,
     R: Serialize + ToRPCType + 'static,
 {
+    /// Future type returned by the async handler.
     type Fut: Future<Output = Result<R>> + Send + 'static;
+    /// Executes the asynchronous RPC handler with the decoded request.
     fn call(&self, req: T) -> Self::Fut;
 }
 
@@ -53,8 +58,9 @@ where
     }
 }
 
-/// The type-erased handler trait
+/// Type-erased synchronous RPC handler.
 pub trait RpcHandler: Send + Sync {
+    /// Dispatches the raw S-expression string to the inner handler.
     fn handle(&self, raw_data: &str) -> Result<Box<dyn ToRPCType>>;
 }
 
@@ -78,8 +84,9 @@ where
     }
 }
 
-/// The type-erased async handler trait
+/// Type-erased asynchronous RPC handler.
 pub trait AsyncRpcHandler: Send + Sync {
+    /// Dispatches the raw S-expression string to the inner async handler.
     fn handle(
         &self,
         raw_data: &str,
@@ -117,14 +124,17 @@ where
     }
 }
 
-/// RPCServer manages a registry of handlers and dispatches incoming raw Lisp RPC strings
+/// Dispatch engine that manages handler registries and routes incoming Lisp-RPC strings.
 #[derive(Clone)]
 pub struct RPCServer {
+    /// Registered synchronous RPC handlers mapped by command name.
     pub handlers: Arc<HashMap<String, Box<dyn RpcHandler>>>,
+    /// Registered asynchronous RPC handlers mapped by command name.
     pub async_handlers: Arc<HashMap<String, Box<dyn AsyncRpcHandler>>>,
 }
 
 impl RPCServer {
+    /// Creates a new empty [`RPCServer`] instance.
     pub fn new() -> Self {
         Self {
             handlers: Arc::new(HashMap::new()),
@@ -132,7 +142,7 @@ impl RPCServer {
         }
     }
 
-    /// Register a handler for a specific command
+    /// Registers a synchronous handler for an RPC command type `T`.
     pub fn register<T, F>(mut self, func: F) -> Result<Self>
     where
         T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn + 'static,
@@ -157,7 +167,7 @@ impl RPCServer {
         Ok(self)
     }
 
-    /// Register an async handler for a specific command
+    /// Registers an asynchronous handler for an RPC command type `T`.
     pub fn register_async<T, F>(mut self, func: F) -> Result<Self>
     where
         T: DeserializeOwned + Debug + Send + Sync + ToRPCType + ToRPCReturn + 'static,
@@ -182,7 +192,7 @@ impl RPCServer {
         Ok(self)
     }
 
-    /// Dispatch a raw Lisp RPC string to the appropriate handler
+    /// Dispatches a raw Lisp-RPC string synchronously and returns the serialized response.
     pub fn handle(&self, raw_data: &str) -> Result<String> {
         // 1. Extract the command name from the Lisp string (e.g., "(command-name ...)")
         let command =
@@ -201,7 +211,7 @@ impl RPCServer {
         resp_obj.serialize_lisp()
     }
 
-    /// Dispatch a raw Lisp RPC string to the appropriate handler asynchronously
+    /// Dispatches a raw Lisp-RPC string asynchronously and returns the serialized response.
     pub async fn handle_async(&self, raw_data: &str) -> Result<String> {
         // 1. Extract the command name from the Lisp string (e.g., "(command-name ...)")
         let command =

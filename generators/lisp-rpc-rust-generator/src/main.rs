@@ -1,3 +1,5 @@
+//! CLI tool for generating Rust client and server code from Lisp-RPC `.lisprpc` specification files.
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use lisp_rpc_rust_generator::*;

@@ -1,3 +1,5 @@
+//! Procedural macro helper for generating Lisp-RPC data implementations.
+
 extern crate proc_macro;
 
 use convert_case::{Case, Casing};
@@ -9,7 +11,7 @@ fn to_kebab_case(s: &str) -> String {
     s.to_case(Case::Kebab)
 }
 
-/// the proc macro that auto impl several features for generated code
+/// Derives the `RPCData` trait for a struct, generating S-expression serialization.
 #[proc_macro_derive(RPCData)]
 pub fn rpc_data_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
