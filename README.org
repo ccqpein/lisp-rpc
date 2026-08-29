@@ -1,51 +1,30 @@
 #+TITLE: Lisp-RPC
 
-Lisp-RPC is a lightweight, S-expression-based Remote Procedure Call protocol designed for simplicity and flexibility. It supports two primary modes of operation to balance dynamic communication with type safety and performance.
-
-Other implements:
-
-+ Lisp version: [[https://github.com/ccqpein/lisp-rpc.cl][lisp-rpc.cl]]
+Lisp-RPC is a lightweight, S-expression-based Remote Procedure Call protocol designed for simplicity and flexibility.
 
 * Overview
 
-Similar to JSON-RPC, Lisp-RPC defines data structures using Lisp S-expression syntax.
+Lisp-RPC combines the human readability of text-based formats with the strong typing of RPC protocols using Lisp S-expression syntax.
 
-Key advantages:
+** Use Cases
 
-- *Formal API contract (like gRPC)*: APIs can be formally defined using schema files (Spec Mode) to generate typed client/server code.
-- *Human-readable (like JSON)*: Messages are written in plain text, making them fully readable and easy to inspect.
+- *Dynamic Communication (Plain Mode)*: Inspectable, schema-free messaging using raw S-expressions.
+- *Typed Microservices (Spec Mode)*: Schema-defined client/server communication with code generation.
+- *Inter-Process & Network RPC*: Lightweight alternative to JSON-RPC and gRPC without verbose nesting or complex IDL setups.
 
-Key disadvantages avoided:
+* Specification
 
-- *No verbose nesting (unlike JSON)*: Lisp-RPC natively supports nested structures with clean S-expressions, avoiding JSON's verbose braces and brackets.
-- *No protocol boilerplate (unlike JSON-RPC)*: It does not mandate boilerplate fields like ~id~ or ~result~ at the protocol level.
-- *No custom IDL language (unlike gRPC)*: It does not require learning a custom syntax (such as ~.proto~); schemas are defined using Lisp's native S-expression format.
+Read the [[https://lisp-rpc.ccqpein.me][Lisp-RPC Specification]].
 
-** Two Modes
+* Related Repositories
 
-- *Plain Mode*: For direct, dynamic communication using raw S-expressions.
-- *Spec Mode*: For schema-defined, type-checked communication with automatic code generation.
-
-* Data Types
-
-Lisp-RPC supports standard Lisp-like data structures:
-- *Primary Types*: =string=, =number=, =boolean= (represented by =T= and =NIL=).
-- *Complex Types*:
-  - *Data*: Named structures with keyword-value pairs: =(name :key value)=.
-  - *List*: Quoted sequences: ='(1 2 3)=.
-  - *Map*: Anonymous keyword-value pairs: ='(:key value)=.
-
-* Lisp-RPC Spec
-
-Check the [[https://lisp-rpc.ccqpein.me][lisp-rpc spec]] for more details.
+- [[https://github.com/ccqpein/lisp-rpc-doc][lisp-rpc-doc]]: Specification documentation and website sources.
+- [[https://github.com/ccqpein/lisp-rpc.cl][lisp-rpc.cl]]: Common Lisp implementation of Lisp-RPC.
+- [[https://github.com/ccqpein/lisp-rpc-json-convertor][lisp-rpc-json-convertor]]: Bidirectional converter between JSON and Lisp-RPC.
 
 * Project Structure
 
-This repository is organized as a Rust workspace containing the core parser, serializer, and generators, along with examples and specifications.
-
-** [[file:example-specs/][example-specs/]]
-
-Contains specification details and example schemas.
+This repository is organized as a Rust workspace containing the core parser, serializer, and generators, along with examples and utilities.
 
 ** [[file:examples/][examples/]]
 
@@ -57,15 +36,19 @@ Implementation of code generators that transform =.lisprpc= specs into library c
 
 ** [[file:parsers/][parsers/]]
 
-Core Lisp-RPC parsers (primarily written in Rust).
+Core Lisp-RPC parsers written in Rust.
 
 ** [[file:raw-data/][raw-data/]]
 
 Core raw data structures (like the =Data= enum) used for dynamic, plain-mode communication.
 
-** [[file:serializer][serializer/]]
+** [[file:serializer/][serializer/]]
 
 Core serialization and deserialization logic.
+
+** [[file:server/][server/]]
+
+Server engine with Actix Web and asynchronous dispatch support.
 
 ** [[file:utils/][utils/]]
 
@@ -82,12 +65,15 @@ To install the Lisp-RPC generator tool:
 * Usage Modes
 
 ** Plain Mode
+
 In Plain Mode, clients send raw S-expressions as strings. The server parses these expressions dynamically.
+
 #+begin_src lisp
   (get-book :title "The Hobbit" :year 1937)
 #+end_src
 
 ** Spec Mode
+
 Spec Mode uses a formal schema defined with =def-msg= and =def-rpc=. This enables generating typed libraries for various target languages.
 
 #+begin_src lisp
