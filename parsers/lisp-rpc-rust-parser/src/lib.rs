@@ -437,7 +437,7 @@ pub struct Parser {
     pub status: ParsingStatus,
 
     /// Parsed expression nodes populated by [`parse`](Parser::parse).
-    pub exprs: Vec<Expr>,
+    pub exprs: VecDeque<Expr>,
 
     recording: bool,
     recorded: Vec<String>,
@@ -449,7 +449,7 @@ impl Default for Parser {
             read_number_config: true,
             tokens: VecDeque::new(),
             status: ParsingStatus::Clean,
-            exprs: vec![],
+            exprs: VecDeque::new(),
             recording: false,
             recorded: vec![],
         }
@@ -463,7 +463,7 @@ impl Parser {
             read_number_config: true,
             tokens: VecDeque::new(),
             status: ParsingStatus::Clean,
-            exprs: vec![],
+            exprs: VecDeque::new(),
             recording: false,
             recorded: vec![],
         }
@@ -554,7 +554,7 @@ impl Parser {
 
     /// Clear the exprs in the parser
     pub fn clear_exprs(&mut self) -> Result<()> {
-        self.exprs = Vec::with_capacity(512);
+        self.exprs = VecDeque::with_capacity(512);
         Ok(())
     }
 
@@ -595,7 +595,7 @@ impl Parser {
                     let res = func(self)?;
                     match &res {
                         ParsedExpr::Completed(e) => {
-                            self.exprs.push(e.clone());
+                            self.exprs.push_back(e.clone());
                             self.status = ParsingStatus::Clean;
                         }
                         ParsedExpr::Incomplete(status) => {
@@ -907,5 +907,10 @@ impl Parser {
     /// Returns an iterator over all parsed expression nodes.
     pub fn iter_expr(&self) -> impl Iterator<Item = &Expr> {
         self.exprs.iter()
+    }
+
+    /// Pops the front completed expression from the expression queue in FIFO order.
+    pub fn pop_expr(&mut self) -> Option<Expr> {
+        self.exprs.pop_front()
     }
 }
