@@ -304,6 +304,128 @@ impl std::fmt::Display for Expr {
     }
 }
 
+/// Represents the intermediate state of the parser when an input token stream
+/// ends before a full expression could be parsed.
+///
+/// In streaming scenarios (such as reading from network sockets or async chunks),
+/// tokens may arrive incrementally. When a parsing function reaches the end of the
+/// current token queue mid-expression:
+///
+/// 1. It does not emit an incomplete or invalid [`Expr`] to [`Parser::exprs`].
+/// 2. It captures all tokens consumed so far in the first tuple field (`VecDeque<String>`).
+/// 3. If the interruption happened inside a nested expression (e.g. inside an inner list or string),
+///    the second field (`Option<Box<ParsingStatus>>`) stores the deeper child state recursively.
+///
+/// When additional tokens arrive later, [`Parser::restore_scanned_tokens`] reconstructs the
+/// original token order by concatenating the scanned tokens and the newly arrived tokens.
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+pub enum ParsingStatus {
+    /// No in-progress expression. The parser is clean and ready to parse a new root expression.
+    #[default]
+    Clean,
+
+    /// An unclosed list expression `(...)`.
+    ///
+    /// - Field 0: Tokens scanned within this list so far before any incomplete child.
+    /// - Field 1: Optional recursive child status if an inner element is incomplete.
+    InReadExpr(VecDeque<String>, Option<Box<ParsingStatus>>),
+
+    /// An unclosed string literal `"..."` waiting for the closing double quote.
+    ///
+    /// - Field 0: Scanned string tokens (including the opening quote `"`) read so far.
+    /// - Field 1: Reserved for nested parsing state (typically `None`).
+    InReadString(VecDeque<String>, Option<Box<ParsingStatus>>),
+
+    /// A quote `'` waiting for its quoted target expression to complete.
+    ///
+    /// - Field 0: Scanned quote tokens (including `'`).
+    /// - Field 1: Optional recursive child status if the quoted target expression is incomplete.
+    InReadQuote(VecDeque<String>, Option<Box<ParsingStatus>>),
+
+    /// A keyword prefix `:` waiting for the keyword name token.
+    ///
+    /// - Field 0: Scanned keyword tokens (including `:`).
+    /// - Field 1: Reserved for nested parsing state (typically `None`).
+    InReadKeyword(VecDeque<String>, Option<Box<ParsingStatus>>),
+
+    /// A comment `;...` waiting for the terminating newline (`\n`).
+    ///
+    /// - Field 0: Scanned comment tokens (including `;`).
+    /// - Field 1: Reserved for nested parsing state (typically `None`).
+    InReadComment(VecDeque<String>, Option<Box<ParsingStatus>>),
+
+    /// Waiting for an atom token.
+    ///
+    /// - Field 0: Scanned atom tokens.
+    /// - Field 1: Reserved for nested parsing state (typically `None`).
+    InReadAtom(VecDeque<String>, Option<Box<ParsingStatus>>),
+}
+
+impl ParsingStatus {
+    /// Collects all scanned tokens stored in this status hierarchy in the order they were scanned.
+    pub fn collect_scanned_tokens(self) -> VecDeque<String> {
+        match self {
+            ParsingStatus::Clean => VecDeque::new(),
+            ParsingStatus::InReadExpr(mut tokens, child)
+            | ParsingStatus::InReadString(mut tokens, child)
+            | ParsingStatus::InReadQuote(mut tokens, child)
+            | ParsingStatus::InReadKeyword(mut tokens, child)
+            | ParsingStatus::InReadComment(mut tokens, child)
+            | ParsingStatus::InReadAtom(mut tokens, child) => {
+                if let Some(child_status) = child {
+                    let mut child_tokens = child_status.collect_scanned_tokens();
+                    tokens.append(&mut child_tokens);
+                }
+                tokens
+            }
+        }
+    }
+}
+
+/// The result of attempting to parse an expression from the token queue.
+///
+/// Returned by [`Parser::parse_one`], [`Parser::read_exp`], [`Parser::read_atom`], etc.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ParsedExpr {
+    /// The token queue ran out of data before the expression could be fully parsed.
+    ///
+    /// Contains the [`ParsingStatus`] holding all tokens scanned so far and any
+    /// nested child states. The expression has not been added to [`Parser::exprs`].
+    Incomplete(ParsingStatus),
+
+    /// The expression was successfully parsed into a complete [`Expr`].
+    Completed(Expr),
+}
+
+impl ParsedExpr {
+    /// Returns `true` if this is [`ParsedExpr::Completed`].
+    pub fn is_completed(&self) -> bool {
+        matches!(self, ParsedExpr::Completed(_))
+    }
+
+    /// Returns `true` if this is [`ParsedExpr::Incomplete`].
+    pub fn is_incomplete(&self) -> bool {
+        matches!(self, ParsedExpr::Incomplete(_))
+    }
+
+    /// Converts this [`ParsedExpr`] into an `Option<Expr>`, returning `Some(Expr)`
+    /// if completed, or `None` if incomplete.
+    pub fn into_expr(self) -> Option<Expr> {
+        match self {
+            ParsedExpr::Completed(expr) => Some(expr),
+            ParsedExpr::Incomplete(_) => None,
+        }
+    }
+
+    /// Returns a reference to the inner [`ParsingStatus`] if incomplete.
+    pub fn status(&self) -> Option<&ParsingStatus> {
+        match self {
+            ParsedExpr::Incomplete(status) => Some(status),
+            ParsedExpr::Completed(_) => None,
+        }
+    }
+}
+
 /// Tokenizer and parser for Lisp S-expressions.
 pub struct Parser {
     /// Will read numbers if true; otherwise numbers are parsed as symbols.
@@ -312,8 +434,13 @@ pub struct Parser {
     /// Token queue populated by [`tokenize`](Parser::tokenize).
     pub tokens: VecDeque<String>,
 
+    pub status: ParsingStatus,
+
     /// Parsed expression nodes populated by [`parse`](Parser::parse).
     pub exprs: Vec<Expr>,
+
+    recording: bool,
+    recorded: Vec<String>,
 }
 
 impl Default for Parser {
@@ -321,7 +448,10 @@ impl Default for Parser {
         Self {
             read_number_config: true,
             tokens: VecDeque::new(),
+            status: ParsingStatus::Clean,
             exprs: vec![],
+            recording: false,
+            recorded: vec![],
         }
     }
 }
@@ -332,7 +462,10 @@ impl Parser {
         Self {
             read_number_config: true,
             tokens: VecDeque::new(),
+            status: ParsingStatus::Clean,
             exprs: vec![],
+            recording: false,
+            recorded: vec![],
         }
     }
 
@@ -384,83 +517,100 @@ impl Parser {
         Ok(())
     }
 
+    /// Pops the next token from the queue, recording it if token recording is active.
+    #[inline]
+    pub fn pop_token(&mut self) -> Option<String> {
+        let token = self.tokens.pop_front()?;
+        if self.recording {
+            self.recorded.push(token.clone());
+        }
+        Some(token)
+    }
+
+    /// Restores all scanned tokens from an incomplete status back into the front of the token queue.
+    pub fn restore_scanned_tokens(&mut self) {
+        let status = std::mem::take(&mut self.status);
+        let mut restored = status.collect_scanned_tokens();
+        restored.append(&mut self.tokens);
+        self.tokens = restored;
+    }
+
+    /// Clear the tokens and exprs
+    pub fn clear(&mut self) -> Result<()> {
+        self.clear_exprs()?;
+        self.clear_tokens()?;
+        self.status = ParsingStatus::Clean;
+        self.recorded.clear();
+        self.recording = false;
+
+        Ok(())
+    }
+
+    /// Clear the tokens in the parser
+    pub fn clear_tokens(&mut self) -> Result<()> {
+        self.tokens = VecDeque::with_capacity(2048);
+        Ok(())
+    }
+
+    /// Clear the exprs in the parser
+    pub fn clear_exprs(&mut self) -> Result<()> {
+        self.exprs = Vec::with_capacity(512);
+        Ok(())
+    }
+
     /// Parses all tokens in the parser into expression nodes.
     pub fn parse(&mut self) -> Result<(), ParserError> {
-        let mut res = vec![];
-
         loop {
-            match self.tokens.front() {
-                Some(b) => match b.as_str() {
-                    "(" => {
-                        res.push(self.read_exp()?);
-                    }
-                    "'" => {
-                        res.push(self.read_quote()?);
-                    }
-                    "\"" => {
-                        res.push(self.read_string()?);
-                    }
-                    ":" => {
-                        res.push(self.read_keyword()?);
-                    }
-                    ";" => {
-                        res.push(self.read_comment()?);
-                    }
-                    " " | "\n" => {
-                        self.tokens.pop_front();
-                    }
-                    _ => {
-                        println!("{:?}", b);
-                        return Err(ParserError::InvalidToken("in read_root"));
-                    }
-                },
-                None => break,
+            if self.tokens.is_empty() && self.status == ParsingStatus::Clean {
+                break;
+            }
+
+            match self.parse_one()? {
+                ParsedExpr::Completed(_) => {}
+                ParsedExpr::Incomplete(_) => {
+                    break;
+                }
             }
         }
 
-        self.exprs = res;
         Ok(())
     }
 
     /// Parses a single expression from the token queue.
-    pub fn parse_one(&mut self) -> Result<(), ParserError> {
+    pub fn parse_one(&mut self) -> Result<ParsedExpr, ParserError> {
+        if self.status != ParsingStatus::Clean {
+            self.restore_scanned_tokens();
+        }
+
+        self.recorded.clear();
+        self.recording = false;
+
         loop {
             match self.tokens.front() {
-                Some(b) => match b.as_str() {
-                    "(" => {
-                        let e = self.read_exp()?;
-                        self.exprs.push(e);
-                        return Ok(());
+                Some(b) if b == " " || b == "\n" => {
+                    self.pop_token();
+                }
+                Some(b) => {
+                    let func = self.read_router(b)?;
+                    let res = func(self)?;
+                    match &res {
+                        ParsedExpr::Completed(e) => {
+                            self.exprs.push(e.clone());
+                            self.status = ParsingStatus::Clean;
+                        }
+                        ParsedExpr::Incomplete(status) => {
+                            self.status = status.clone();
+                        }
                     }
-                    "'" => {
-                        let e = self.read_quote()?;
-                        self.exprs.push(e);
-                        return Ok(());
-                    }
-                    "\"" => {
-                        let e = self.read_string()?;
-                        self.exprs.push(e);
-                        return Ok(());
-                    }
-                    ":" => {
-                        let e = self.read_keyword()?;
-                        self.exprs.push(e);
-                        return Ok(());
-                    }
-                    ";" => {
-                        let e = self.read_comment()?;
-                        self.exprs.push(e);
-                        return Ok(());
-                    }
-                    " " | "\n" => {
-                        self.tokens.pop_front();
-                    }
-                    _ => {
-                        println!("{:?}", b);
-                        return Err(ParserError::InvalidToken("in read_root"));
-                    }
-                },
-                None => return Err(ParserError::InvalidToken("run out the tokens")),
+                    self.recorded.clear();
+                    self.recording = false;
+                    return Ok(res);
+                }
+                None => {
+                    self.recorded.clear();
+                    self.recording = false;
+                    return Ok(ParsedExpr::Incomplete(ParsingStatus::Clean));
+                }
             }
         }
     }
@@ -469,7 +619,7 @@ impl Parser {
     pub fn read_router(
         &self,
         token: &str,
-    ) -> Result<fn(&mut Self) -> Result<Expr, ParserError>, ParserError> {
+    ) -> Result<fn(&mut Self) -> Result<ParsedExpr, ParserError>, ParserError> {
         match token {
             "(" => Ok(Self::read_exp),
             "'" => Ok(Self::read_quote),
@@ -481,146 +631,274 @@ impl Parser {
     }
 
     /// Reads an atom expression from the token queue.
-    pub fn read_atom(&mut self) -> Result<Expr, ParserError> {
-        let token = self
-            .tokens
-            .pop_front()
-            .ok_or(ParserError::InvalidToken("in read_sym"))?;
+    pub fn read_atom(&mut self) -> Result<ParsedExpr, ParserError> {
+        let token = match self.pop_token() {
+            Some(t) => t,
+            None => {
+                return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadAtom(
+                    VecDeque::new(),
+                    None,
+                )));
+            }
+        };
 
         if self.read_number_config {
             if let Ok(n) = token.parse::<i64>() {
-                return Ok(Expr::Atom(Atom::read_number(
+                return Ok(ParsedExpr::Completed(Expr::Atom(Atom::read_number(
                     &token,
                     TypeValueNumber::Int(n),
-                )));
+                ))));
             }
             if token.chars().next().map_or(false, |c| {
                 c.is_ascii_digit() || c == '.' || c == '+' || c == '-'
             }) {
                 if let Ok(f) = token.parse::<f64>() {
-                    return Ok(Expr::Atom(Atom::read_number(
+                    return Ok(ParsedExpr::Completed(Expr::Atom(Atom::read_number(
                         &token,
                         TypeValueNumber::Float(f),
+                    ))));
+                }
+            }
+        }
+
+        Ok(ParsedExpr::Completed(Expr::Atom(Atom::read(&token))))
+    }
+
+    /// Reads a quoted expression from the token queue.
+    pub fn read_quote(&mut self) -> Result<ParsedExpr, ParserError> {
+        let quote_tok = match self.pop_token() {
+            Some(t) if t == "'" => t,
+            Some(_) => return Err(ParserError::InvalidToken("expected '\'' in read_quote")),
+            None => {
+                return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadQuote(
+                    VecDeque::new(),
+                    None,
+                )));
+            }
+        };
+
+        let mut scanned = VecDeque::new();
+        scanned.push_back(quote_tok);
+
+        let router = match self.tokens.front() {
+            Some(t) => self.read_router(t)?,
+            None => {
+                return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadQuote(
+                    scanned,
+                    None,
+                )));
+            }
+        };
+
+        match router(self)? {
+            ParsedExpr::Completed(res) => {
+                Ok(ParsedExpr::Completed(Expr::Quote(Box::new(res))))
+            }
+            ParsedExpr::Incomplete(child_status) => {
+                Ok(ParsedExpr::Incomplete(ParsingStatus::InReadQuote(
+                    scanned,
+                    Some(Box::new(child_status)),
+                )))
+            }
+        }
+    }
+
+    /// Reads a list expression enclosed in parentheses.
+    pub fn read_exp(&mut self) -> Result<ParsedExpr, ParserError> {
+        let open_paren = match self.pop_token() {
+            Some(t) if t == "(" => t,
+            Some(_) => return Err(ParserError::InvalidToken("expected '(' in read_exp")),
+            None => {
+                return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadExpr(
+                    VecDeque::new(),
+                    None,
+                )));
+            }
+        };
+
+        let mut scanned = VecDeque::new();
+        scanned.push_back(open_paren);
+
+        let mut res = vec![];
+
+        loop {
+            match self.tokens.front() {
+                Some(t) if t == ")" => {
+                    let closing = self.pop_token().unwrap();
+                    scanned.push_back(closing);
+                    break;
+                }
+                Some(t) if t == " " || t == "\n" => {
+                    let space = self.pop_token().unwrap();
+                    scanned.push_back(space);
+                }
+                Some(t) => {
+                    let router = self.read_router(t)?;
+                    let prev_rec = self.recorded.len();
+                    self.recording = true;
+                    match router(self) {
+                        Ok(ParsedExpr::Completed(expr)) => {
+                            let newly_recorded = self.recorded.drain(prev_rec..);
+                            scanned.extend(newly_recorded);
+                            res.push(expr);
+                        }
+                        Ok(ParsedExpr::Incomplete(child_status)) => {
+                            self.recorded.truncate(prev_rec);
+                            return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadExpr(
+                                scanned,
+                                Some(Box::new(child_status)),
+                            )));
+                        }
+                        Err(e) => {
+                            self.recorded.truncate(prev_rec);
+                            return Err(e);
+                        }
+                    }
+                }
+                None => {
+                    return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadExpr(
+                        scanned,
+                        None,
                     )));
                 }
             }
         }
 
-        Ok(Expr::Atom(Atom::read(&token)))
-    }
-
-    /// Reads a quoted expression from the token queue.
-    pub fn read_quote(&mut self) -> Result<Expr, ParserError> {
-        self.tokens
-            .pop_front()
-            .ok_or(ParserError::InvalidToken("in read_quote"))?;
-
-        let res = match self.tokens.front() {
-            Some(t) => self.read_router(t)?(self)?,
-            None => return Err(ParserError::InvalidToken("in read_quote")),
-        };
-
-        Ok(Expr::Quote(Box::new(res)))
-    }
-
-    /// Reads a list expression enclosed in parentheses.
-    pub fn read_exp(&mut self) -> Result<Expr, ParserError> {
-        let mut res = vec![];
-        self.tokens.pop_front();
-
-        loop {
-            match self.tokens.front() {
-                Some(t) if t == ")" => {
-                    self.tokens.pop_front();
-                    break;
-                }
-                // ignore spaces
-                Some(t) if t == " " || t == "\n" => {
-                    self.tokens.pop_front();
-                }
-                Some(t) => res.push(self.read_router(t)?(self)?),
-                None => return Err(ParserError::InvalidToken("in read_exp, the tokens run out")),
-            }
-        }
-
-        Ok(Expr::List(res))
+        Ok(ParsedExpr::Completed(Expr::List(res)))
     }
 
     /// Reads a string literal enclosed in double quotes.
-    pub fn read_string(&mut self) -> Result<Expr, ParserError> {
-        self.tokens.pop_front();
+    pub fn read_string(&mut self) -> Result<ParsedExpr, ParserError> {
+        let open_quote = match self.pop_token() {
+            Some(t) if t == "\"" => t,
+            Some(_) => return Err(ParserError::InvalidToken("expected '\"' in read_string")),
+            None => {
+                return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadString(
+                    VecDeque::new(),
+                    None,
+                )));
+            }
+        };
+
+        let mut scanned = VecDeque::new();
+        scanned.push_back(open_quote);
 
         let mut escape = false;
-        let mut res = String::new();
-        let mut this_token;
+        let mut res = String::with_capacity(32);
         loop {
-            this_token = self
-                .tokens
-                .pop_front()
-                .ok_or(ParserError::InvalidToken("in read_string"))?;
+            let this_token = match self.pop_token() {
+                Some(t) => t,
+                None => {
+                    return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadString(
+                        scanned,
+                        None,
+                    )));
+                }
+            };
 
             if escape {
-                res = res + &this_token;
+                res.push_str(&this_token);
                 escape = false;
+                scanned.push_back(this_token);
                 continue;
             }
 
-            match this_token.as_str() {
-                "\\" => escape = true,
-                "\"" => break,
-                _ => res = res + &this_token,
+            let is_quote = this_token == "\"";
+            let is_escape = this_token == "\\";
+
+            if is_escape {
+                escape = true;
+            } else if !is_quote {
+                res.push_str(&this_token);
+            }
+
+            scanned.push_back(this_token);
+
+            if is_quote {
+                break;
             }
         }
 
-        Ok(Expr::Atom(Atom::read_string(&res)))
+        Ok(ParsedExpr::Completed(Expr::Atom(Atom::read_string(&res))))
     }
 
     /// Reads a keyword token prefixed with a colon.
-    pub fn read_keyword(&mut self) -> Result<Expr, ParserError> {
-        self.tokens.pop_front();
+    pub fn read_keyword(&mut self) -> Result<ParsedExpr, ParserError> {
+        let colon = match self.pop_token() {
+            Some(t) if t == ":" => t,
+            Some(_) => return Err(ParserError::InvalidToken("expected ':' in read_keyword")),
+            None => {
+                return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadKeyword(
+                    VecDeque::new(),
+                    None,
+                )));
+            }
+        };
 
-        let token = self
-            .tokens
-            .pop_front()
-            .ok_or(ParserError::InvalidToken("in read_keyword"))?;
+        let token = match self.pop_token() {
+            Some(t) => t,
+            None => {
+                let mut scanned = VecDeque::new();
+                scanned.push_back(colon);
+                return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadKeyword(
+                    scanned,
+                    None,
+                )));
+            }
+        };
 
-        Ok(Expr::Atom(Atom::read_keyword(&token)))
+        Ok(ParsedExpr::Completed(Expr::Atom(Atom::read_keyword(&token))))
     }
 
     /// Reads a comment line prefixed with a semicolon.
-    pub fn read_comment(&mut self) -> Result<Expr, ParserError> {
-        //dbg!(&tokens);
-        self.tokens.pop_front();
+    pub fn read_comment(&mut self) -> Result<ParsedExpr, ParserError> {
+        let semi = match self.pop_token() {
+            Some(t) if t == ";" => t,
+            Some(_) => return Err(ParserError::InvalidToken("expected ';' in read_comment")),
+            None => {
+                return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadComment(
+                    VecDeque::new(),
+                    None,
+                )));
+            }
+        };
 
         let mut start = false;
-        let mut res = String::new();
-        let mut this_token;
+        let mut res = String::with_capacity(64);
+        let mut scanned = VecDeque::new();
+        scanned.push_back(semi);
 
         loop {
-            this_token = match self.tokens.pop_front() {
+            let this_token = match self.pop_token() {
                 Some(tt) => tt,
                 None => break,
             };
 
             if !start {
                 match this_token.as_str() {
-                    ";" | " " => continue,
+                    ";" | " " => {
+                        scanned.push_back(this_token);
+                        continue;
+                    }
                     _ => start = true,
                 }
             }
 
-            // new line end comment reading
-            if this_token == "\n" {
+            let is_newline = this_token == "\n";
+            if !is_newline {
+                res.push_str(&this_token);
+            }
+            scanned.push_back(this_token);
+
+            if is_newline {
                 break;
             }
-
-            res = res + &this_token
         }
 
-        if res != "" {
-            Ok(Expr::Comment(res.trim_end().to_string()))
+        if !res.is_empty() {
+            Ok(ParsedExpr::Completed(Expr::Comment(res.trim_end().to_string())))
         } else {
-            Ok(Expr::Comment(String::new()))
+            Ok(ParsedExpr::Completed(Expr::Comment(String::new())))
         }
     }
 }
