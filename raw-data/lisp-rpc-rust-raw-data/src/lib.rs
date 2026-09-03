@@ -5,6 +5,8 @@
 
 pub mod files;
 mod macros;
+pub mod raw_data_generator;
+pub use raw_data_generator::RawDataGenerator;
 
 use std::{cell::OnceCell, collections::HashMap, error::Error, io::Cursor};
 
@@ -176,6 +178,14 @@ impl Data {
                 err_type: DataErrorType::InvalidInput,
             })),
         }
+    }
+
+    pub fn from_exprs<'a>(es: impl Iterator<Item = &'a Expr>) -> Result<Vec<Self>> {
+        let mut res = vec![];
+        for e in es {
+            res.push(Self::from_expr(e)?)
+        }
+        Ok(res)
     }
 
     /// Serializes the data into a Lisp-RPC S-expression string.
