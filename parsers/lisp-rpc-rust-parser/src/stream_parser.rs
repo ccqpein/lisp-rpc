@@ -16,7 +16,12 @@ pub struct StreamParser<S> {
     pub s: S,
 }
 
-impl<S> StreamParser<S> {
+impl<S, B, E> StreamParser<S>
+where
+    S: Stream<Item = Result<B, E>> + Unpin,
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
+{
     /// Creates a new `StreamParser` wrapping the given stream with a default parser.
     pub fn new(s: S) -> Self {
         Self {
