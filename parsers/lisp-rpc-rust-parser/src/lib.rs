@@ -5,6 +5,7 @@ use std::{collections::VecDeque, error::Error, io::Read};
 use tracing::error;
 
 pub mod stream_parser;
+pub use stream_parser::StreamParser;
 
 /// Errors that can occur during Lisp S-expression parsing.
 #[derive(Debug, PartialEq, Eq)]
@@ -361,13 +362,33 @@ pub enum ParsingStatus {
     /// - Field 0: Scanned atom tokens.
     /// - Field 1: Reserved for nested parsing state (typically `None`).
     InReadAtom(VecDeque<String>, Option<Box<ParsingStatus>>),
+
+    /// Parsing encountered a syntax error, unexpected EOF, or corrupt data.
+    ///
+    /// Once in the `Error` status, the parser will refuse further parsing until reset via [`Parser::clear`].
+    Error,
 }
 
 impl ParsingStatus {
+    /// Returns `true` if the status is [`Clean`](ParsingStatus::Clean).
+    pub fn is_clean(&self) -> bool {
+        matches!(self, ParsingStatus::Clean)
+    }
+
+    /// Returns `true` if the status is [`Error`](ParsingStatus::Error).
+    pub fn is_error(&self) -> bool {
+        matches!(self, ParsingStatus::Error)
+    }
+
+    /// Returns `true` if the status represents an in-progress incomplete expression.
+    pub fn is_incomplete(&self) -> bool {
+        !matches!(self, ParsingStatus::Clean | ParsingStatus::Error)
+    }
+
     /// Collects all scanned tokens stored in this status hierarchy in the order they were scanned.
     pub fn collect_scanned_tokens(self) -> VecDeque<String> {
         match self {
-            ParsingStatus::Clean => VecDeque::new(),
+            ParsingStatus::Clean | ParsingStatus::Error => VecDeque::new(),
             ParsingStatus::InReadExpr(mut tokens, child)
             | ParsingStatus::InReadString(mut tokens, child)
             | ParsingStatus::InReadQuote(mut tokens, child)
@@ -489,7 +510,7 @@ impl Parser {
                     match c {
                         b'(' | b' ' | b')' | b'\'' | b'"' | b':' | b'\n' | b';' => {
                             if !cache.is_empty() {
-                                res.push(String::from_utf8(cache.clone()).unwrap());
+                                res.push(String::from_utf8(cache.clone())?);
                                 cache.clear();
                             }
 
@@ -498,7 +519,7 @@ impl Parser {
                                 _ => (),
                             }
 
-                            res.push(String::from_utf8(vec![*c]).unwrap())
+                            res.push(String::from_utf8(vec![*c])?);
                         }
                         _ => {
                             cache.push(*c);
@@ -511,7 +532,7 @@ impl Parser {
         }
 
         if !cache.is_empty() {
-            res.push(String::from_utf8(cache.clone()).unwrap());
+            res.push(String::from_utf8(cache.clone())?);
         }
 
         self.tokens.append(&mut res.into());
@@ -562,15 +583,23 @@ impl Parser {
 
     /// Parses all tokens in the parser into expression nodes.
     pub fn parse(&mut self) -> Result<(), ParserError> {
+        if self.status == ParsingStatus::Error {
+            return Err(ParserError::CorruptData("parser is in an error state"));
+        }
+
         loop {
             if self.tokens.is_empty() && self.status == ParsingStatus::Clean {
                 break;
             }
 
-            match self.parse_one()? {
-                ParsedExpr::Completed(_) => {}
-                ParsedExpr::Incomplete(_) => {
+            match self.parse_one() {
+                Ok(ParsedExpr::Completed(_)) => {}
+                Ok(ParsedExpr::Incomplete(_)) => {
                     break;
+                }
+                Err(e) => {
+                    self.status = ParsingStatus::Error;
+                    return Err(e);
                 }
             }
         }
@@ -580,6 +609,10 @@ impl Parser {
 
     /// Parses a single expression from the token queue.
     pub fn parse_one(&mut self) -> Result<ParsedExpr, ParserError> {
+        if self.status == ParsingStatus::Error {
+            return Err(ParserError::CorruptData("parser is in an error state"));
+        }
+
         if self.status != ParsingStatus::Clean {
             self.restore_scanned_tokens();
         }
@@ -593,8 +626,20 @@ impl Parser {
                     self.pop_token();
                 }
                 Some(b) => {
-                    let func = self.read_router(b)?;
-                    let res = func(self)?;
+                    let func = match self.read_router(b) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            self.status = ParsingStatus::Error;
+                            return Err(e);
+                        }
+                    };
+                    let res = match func(self) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status = ParsingStatus::Error;
+                            return Err(e);
+                        }
+                    };
                     match &res {
                         ParsedExpr::Completed(e) => {
                             self.exprs.push_back(e.clone());
