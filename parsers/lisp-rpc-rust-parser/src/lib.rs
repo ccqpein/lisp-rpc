@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use std::{collections::VecDeque, error::Error, io::Read};
-use tracing::error;
 
 pub mod stream_parser;
 pub use stream_parser::StreamParser;
@@ -464,6 +463,9 @@ pub struct Parser {
 
     recording: bool,
     recorded: Vec<String>,
+
+    /// Unprocessed bytes buffered across chunk boundaries (e.g. split multi-byte UTF-8 sequences).
+    byte_cache: Vec<u8>,
 }
 
 impl Default for Parser {
@@ -475,6 +477,7 @@ impl Default for Parser {
             exprs: VecDeque::new(),
             recording: false,
             recorded: vec![],
+            byte_cache: vec![],
         }
     }
 }
@@ -489,6 +492,7 @@ impl Parser {
             exprs: VecDeque::new(),
             recording: false,
             recorded: vec![],
+            byte_cache: vec![],
         }
     }
 
@@ -499,40 +503,90 @@ impl Parser {
     }
 
     /// Tokenizes the input reader into the token queue.
+    ///
+    /// Reads in buffered chunks, handles multi-byte UTF-8 split across chunk boundaries,
+    /// skips empty chunks, and optimizes token extraction without intermediate allocations.
     pub fn tokenize(&mut self, mut source_code: impl Read) -> Result<()> {
-        let mut buf = [0; 1];
-        let mut cache = vec![];
-        let mut res = vec![];
+        let mut buf = [0u8; 4096];
         loop {
             match source_code.read(&mut buf) {
-                Ok(n) if n != 0 => {
-                    let c = buf.get(0).unwrap();
-                    match c {
-                        b'(' | b' ' | b')' | b'\'' | b'"' | b':' | b'\n' | b';' => {
-                            if !cache.is_empty() {
-                                res.push(String::from_utf8(cache.clone())?);
-                                cache.clear();
-                            }
-
-                            match res.last() {
-                                Some(le) if le == " " && *c == b' ' => continue,
-                                _ => (),
-                            }
-
-                            res.push(String::from_utf8(vec![*c])?);
-                        }
-                        _ => {
-                            cache.push(*c);
-                        }
-                    }
+                Ok(0) => break,
+                Ok(n) => {
+                    self.byte_cache.extend_from_slice(&buf[..n]);
                 }
-                Ok(_) => break,
-                Err(e) => error!("error in tokenize step {}", e),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e.into()),
             }
         }
 
-        if !cache.is_empty() {
-            res.push(String::from_utf8(cache.clone())?);
+        if self.byte_cache.is_empty() {
+            return Ok(());
+        }
+
+        // Validate and separate valid UTF-8 slice from any incomplete trailing multi-byte sequence
+        let (valid_str, remaining_len) = match std::str::from_utf8(&self.byte_cache) {
+            Ok(s) => (s, 0),
+            Err(e) if e.error_len().is_none() => {
+                // The chunk ended in the middle of a multi-byte UTF-8 character.
+                let valid_up_to = e.valid_up_to();
+                let valid = match std::str::from_utf8(&self.byte_cache[..valid_up_to]) {
+                    Ok(s) => s,
+                    Err(e) => return Err(e.into()),
+                };
+                let rem = self.byte_cache.len() - valid_up_to;
+                (valid, rem)
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        let mut res = Vec::new();
+        let bytes = valid_str.as_bytes();
+        let mut last_start = 0;
+
+        for (i, &c) in bytes.iter().enumerate() {
+            match c {
+                b'(' | b' ' | b')' | b'\'' | b'"' | b':' | b'\n' | b';' => {
+                    if last_start < i {
+                        res.push(valid_str[last_start..i].to_string());
+                    }
+
+                    if c == b' ' {
+                        let prev_is_space = res.last().map_or(false, |le| le == " ")
+                            || (res.is_empty()
+                                && self.tokens.back().map_or(false, |te| te == " "));
+                        if !prev_is_space {
+                            res.push(" ".to_string());
+                        }
+                    } else {
+                        let delim_str = match c {
+                            b'(' => "(",
+                            b')' => ")",
+                            b'\'' => "'",
+                            b'"' => "\"",
+                            b':' => ":",
+                            b'\n' => "\n",
+                            b';' => ";",
+                            _ => unreachable!(),
+                        };
+                        res.push(delim_str.to_string());
+                    }
+
+                    last_start = i + 1;
+                }
+                _ => {}
+            }
+        }
+
+        if last_start < valid_str.len() {
+            res.push(valid_str[last_start..].to_string());
+        }
+
+        // Keep any trailing incomplete UTF-8 bytes for the next chunk
+        if remaining_len > 0 {
+            let rem_start = self.byte_cache.len() - remaining_len;
+            self.byte_cache.drain(..rem_start);
+        } else {
+            self.byte_cache.clear();
         }
 
         self.tokens.append(&mut res.into());
@@ -562,6 +616,7 @@ impl Parser {
     pub fn clear(&mut self) -> Result<()> {
         self.clear_exprs()?;
         self.clear_tokens()?;
+        self.byte_cache.clear();
         self.status = ParsingStatus::Clean;
         self.recorded.clear();
         self.recording = false;
