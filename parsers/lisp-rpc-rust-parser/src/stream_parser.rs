@@ -39,15 +39,20 @@ where
 {
     type Item = Result<Expr, ParserError>;
 
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let lower = self.p.exprs.len();
+        let (_, upper) = self.s.size_hint();
+        (lower, upper)
+    }
+
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = &mut *self;
 
-        loop {
-            // If parser is in an error state, terminate the stream
-            if this.p.status.is_error() {
-                return Poll::Ready(None);
-            }
+        if this.p.status.is_error() {
+            return Poll::Ready(None);
+        }
 
+        loop {
             // 1. If we already have a completed expr queued in `p.exprs`, yield it immediately
             if let Some(e) = this.p.pop_expr() {
                 return Poll::Ready(Some(Ok(e)));
