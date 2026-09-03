@@ -4,6 +4,8 @@ use anyhow::Result;
 use std::{collections::VecDeque, error::Error, io::Read};
 use tracing::error;
 
+pub mod stream_parser;
+
 /// Errors that can occur during Lisp S-expression parsing.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParserError {
@@ -512,7 +514,7 @@ impl Parser {
             res.push(String::from_utf8(cache.clone()).unwrap());
         }
 
-        self.tokens = res.into();
+        self.tokens.append(&mut res.into());
 
         Ok(())
     }
@@ -684,22 +686,16 @@ impl Parser {
             Some(t) => self.read_router(t)?,
             None => {
                 return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadQuote(
-                    scanned,
-                    None,
+                    scanned, None,
                 )));
             }
         };
 
         match router(self)? {
-            ParsedExpr::Completed(res) => {
-                Ok(ParsedExpr::Completed(Expr::Quote(Box::new(res))))
-            }
-            ParsedExpr::Incomplete(child_status) => {
-                Ok(ParsedExpr::Incomplete(ParsingStatus::InReadQuote(
-                    scanned,
-                    Some(Box::new(child_status)),
-                )))
-            }
+            ParsedExpr::Completed(res) => Ok(ParsedExpr::Completed(Expr::Quote(Box::new(res)))),
+            ParsedExpr::Incomplete(child_status) => Ok(ParsedExpr::Incomplete(
+                ParsingStatus::InReadQuote(scanned, Some(Box::new(child_status))),
+            )),
         }
     }
 
@@ -757,8 +753,7 @@ impl Parser {
                 }
                 None => {
                     return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadExpr(
-                        scanned,
-                        None,
+                        scanned, None,
                     )));
                 }
             }
@@ -790,8 +785,7 @@ impl Parser {
                 Some(t) => t,
                 None => {
                     return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadString(
-                        scanned,
-                        None,
+                        scanned, None,
                     )));
                 }
             };
@@ -841,13 +835,14 @@ impl Parser {
                 let mut scanned = VecDeque::new();
                 scanned.push_back(colon);
                 return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadKeyword(
-                    scanned,
-                    None,
+                    scanned, None,
                 )));
             }
         };
 
-        Ok(ParsedExpr::Completed(Expr::Atom(Atom::read_keyword(&token))))
+        Ok(ParsedExpr::Completed(Expr::Atom(Atom::read_keyword(
+            &token,
+        ))))
     }
 
     /// Reads a comment line prefixed with a semicolon.
@@ -896,7 +891,9 @@ impl Parser {
         }
 
         if !res.is_empty() {
-            Ok(ParsedExpr::Completed(Expr::Comment(res.trim_end().to_string())))
+            Ok(ParsedExpr::Completed(Expr::Comment(
+                res.trim_end().to_string(),
+            )))
         } else {
             Ok(ParsedExpr::Completed(Expr::Comment(String::new())))
         }
