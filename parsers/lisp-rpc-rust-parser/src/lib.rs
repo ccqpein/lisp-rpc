@@ -2,7 +2,9 @@
 
 use anyhow::Result;
 use std::{collections::VecDeque, error::Error, io::Read};
-use tracing::error;
+
+pub mod stream_parser;
+pub use stream_parser::StreamParser;
 
 /// Errors that can occur during Lisp S-expression parsing.
 #[derive(Debug, PartialEq, Eq)]
@@ -359,13 +361,33 @@ pub enum ParsingStatus {
     /// - Field 0: Scanned atom tokens.
     /// - Field 1: Reserved for nested parsing state (typically `None`).
     InReadAtom(VecDeque<String>, Option<Box<ParsingStatus>>),
+
+    /// Parsing encountered a syntax error, unexpected EOF, or corrupt data.
+    ///
+    /// Once in the `Error` status, the parser will refuse further parsing until reset via [`Parser::clear`].
+    Error,
 }
 
 impl ParsingStatus {
+    /// Returns `true` if the status is [`Clean`](ParsingStatus::Clean).
+    pub fn is_clean(&self) -> bool {
+        matches!(self, ParsingStatus::Clean)
+    }
+
+    /// Returns `true` if the status is [`Error`](ParsingStatus::Error).
+    pub fn is_error(&self) -> bool {
+        matches!(self, ParsingStatus::Error)
+    }
+
+    /// Returns `true` if the status represents an in-progress incomplete expression.
+    pub fn is_incomplete(&self) -> bool {
+        !matches!(self, ParsingStatus::Clean | ParsingStatus::Error)
+    }
+
     /// Collects all scanned tokens stored in this status hierarchy in the order they were scanned.
     pub fn collect_scanned_tokens(self) -> VecDeque<String> {
         match self {
-            ParsingStatus::Clean => VecDeque::new(),
+            ParsingStatus::Clean | ParsingStatus::Error => VecDeque::new(),
             ParsingStatus::InReadExpr(mut tokens, child)
             | ParsingStatus::InReadString(mut tokens, child)
             | ParsingStatus::InReadQuote(mut tokens, child)
@@ -441,6 +463,9 @@ pub struct Parser {
 
     recording: bool,
     recorded: Vec<String>,
+
+    /// Unprocessed bytes buffered across chunk boundaries (e.g. split multi-byte UTF-8 sequences).
+    byte_cache: Vec<u8>,
 }
 
 impl Default for Parser {
@@ -452,6 +477,7 @@ impl Default for Parser {
             exprs: VecDeque::new(),
             recording: false,
             recorded: vec![],
+            byte_cache: vec![],
         }
     }
 }
@@ -466,6 +492,7 @@ impl Parser {
             exprs: VecDeque::new(),
             recording: false,
             recorded: vec![],
+            byte_cache: vec![],
         }
     }
 
@@ -476,43 +503,93 @@ impl Parser {
     }
 
     /// Tokenizes the input reader into the token queue.
+    ///
+    /// Reads in buffered chunks, handles multi-byte UTF-8 split across chunk boundaries,
+    /// skips empty chunks, and optimizes token extraction without intermediate allocations.
     pub fn tokenize(&mut self, mut source_code: impl Read) -> Result<()> {
-        let mut buf = [0; 1];
-        let mut cache = vec![];
-        let mut res = vec![];
+        let mut buf = [0u8; 4096];
         loop {
             match source_code.read(&mut buf) {
-                Ok(n) if n != 0 => {
-                    let c = buf.get(0).unwrap();
-                    match c {
-                        b'(' | b' ' | b')' | b'\'' | b'"' | b':' | b'\n' | b';' => {
-                            if !cache.is_empty() {
-                                res.push(String::from_utf8(cache.clone()).unwrap());
-                                cache.clear();
-                            }
-
-                            match res.last() {
-                                Some(le) if le == " " && *c == b' ' => continue,
-                                _ => (),
-                            }
-
-                            res.push(String::from_utf8(vec![*c]).unwrap())
-                        }
-                        _ => {
-                            cache.push(*c);
-                        }
-                    }
+                Ok(0) => break,
+                Ok(n) => {
+                    self.byte_cache.extend_from_slice(&buf[..n]);
                 }
-                Ok(_) => break,
-                Err(e) => error!("error in tokenize step {}", e),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e.into()),
             }
         }
 
-        if !cache.is_empty() {
-            res.push(String::from_utf8(cache.clone()).unwrap());
+        if self.byte_cache.is_empty() {
+            return Ok(());
         }
 
-        self.tokens = res.into();
+        // Validate and separate valid UTF-8 slice from any incomplete trailing multi-byte sequence
+        let (valid_str, remaining_len) = match std::str::from_utf8(&self.byte_cache) {
+            Ok(s) => (s, 0),
+            Err(e) if e.error_len().is_none() => {
+                // The chunk ended in the middle of a multi-byte UTF-8 character.
+                let valid_up_to = e.valid_up_to();
+                let valid = match std::str::from_utf8(&self.byte_cache[..valid_up_to]) {
+                    Ok(s) => s,
+                    Err(e) => return Err(e.into()),
+                };
+                let rem = self.byte_cache.len() - valid_up_to;
+                (valid, rem)
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        let mut res = Vec::new();
+        let bytes = valid_str.as_bytes();
+        let mut last_start = 0;
+
+        for (i, &c) in bytes.iter().enumerate() {
+            match c {
+                b'(' | b' ' | b')' | b'\'' | b'"' | b':' | b'\n' | b';' => {
+                    if last_start < i {
+                        res.push(valid_str[last_start..i].to_string());
+                    }
+
+                    if c == b' ' {
+                        let prev_is_space = res.last().map_or(false, |le| le == " ")
+                            || (res.is_empty()
+                                && self.tokens.back().map_or(false, |te| te == " "));
+                        if !prev_is_space {
+                            res.push(" ".to_string());
+                        }
+                    } else {
+                        let delim_str = match c {
+                            b'(' => "(",
+                            b')' => ")",
+                            b'\'' => "'",
+                            b'"' => "\"",
+                            b':' => ":",
+                            b'\n' => "\n",
+                            b';' => ";",
+                            _ => unreachable!(),
+                        };
+                        res.push(delim_str.to_string());
+                    }
+
+                    last_start = i + 1;
+                }
+                _ => {}
+            }
+        }
+
+        if last_start < valid_str.len() {
+            res.push(valid_str[last_start..].to_string());
+        }
+
+        // Keep any trailing incomplete UTF-8 bytes for the next chunk
+        if remaining_len > 0 {
+            let rem_start = self.byte_cache.len() - remaining_len;
+            self.byte_cache.drain(..rem_start);
+        } else {
+            self.byte_cache.clear();
+        }
+
+        self.tokens.append(&mut res.into());
 
         Ok(())
     }
@@ -539,6 +616,7 @@ impl Parser {
     pub fn clear(&mut self) -> Result<()> {
         self.clear_exprs()?;
         self.clear_tokens()?;
+        self.byte_cache.clear();
         self.status = ParsingStatus::Clean;
         self.recorded.clear();
         self.recording = false;
@@ -560,15 +638,23 @@ impl Parser {
 
     /// Parses all tokens in the parser into expression nodes.
     pub fn parse(&mut self) -> Result<(), ParserError> {
+        if self.status == ParsingStatus::Error {
+            return Err(ParserError::CorruptData("parser is in an error state"));
+        }
+
         loop {
             if self.tokens.is_empty() && self.status == ParsingStatus::Clean {
                 break;
             }
 
-            match self.parse_one()? {
-                ParsedExpr::Completed(_) => {}
-                ParsedExpr::Incomplete(_) => {
+            match self.parse_one() {
+                Ok(ParsedExpr::Completed(_)) => {}
+                Ok(ParsedExpr::Incomplete(_)) => {
                     break;
+                }
+                Err(e) => {
+                    self.status = ParsingStatus::Error;
+                    return Err(e);
                 }
             }
         }
@@ -578,6 +664,10 @@ impl Parser {
 
     /// Parses a single expression from the token queue.
     pub fn parse_one(&mut self) -> Result<ParsedExpr, ParserError> {
+        if self.status == ParsingStatus::Error {
+            return Err(ParserError::CorruptData("parser is in an error state"));
+        }
+
         if self.status != ParsingStatus::Clean {
             self.restore_scanned_tokens();
         }
@@ -591,8 +681,20 @@ impl Parser {
                     self.pop_token();
                 }
                 Some(b) => {
-                    let func = self.read_router(b)?;
-                    let res = func(self)?;
+                    let func = match self.read_router(b) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            self.status = ParsingStatus::Error;
+                            return Err(e);
+                        }
+                    };
+                    let res = match func(self) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status = ParsingStatus::Error;
+                            return Err(e);
+                        }
+                    };
                     match &res {
                         ParsedExpr::Completed(e) => {
                             self.exprs.push_back(e.clone());
@@ -684,22 +786,16 @@ impl Parser {
             Some(t) => self.read_router(t)?,
             None => {
                 return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadQuote(
-                    scanned,
-                    None,
+                    scanned, None,
                 )));
             }
         };
 
         match router(self)? {
-            ParsedExpr::Completed(res) => {
-                Ok(ParsedExpr::Completed(Expr::Quote(Box::new(res))))
-            }
-            ParsedExpr::Incomplete(child_status) => {
-                Ok(ParsedExpr::Incomplete(ParsingStatus::InReadQuote(
-                    scanned,
-                    Some(Box::new(child_status)),
-                )))
-            }
+            ParsedExpr::Completed(res) => Ok(ParsedExpr::Completed(Expr::Quote(Box::new(res)))),
+            ParsedExpr::Incomplete(child_status) => Ok(ParsedExpr::Incomplete(
+                ParsingStatus::InReadQuote(scanned, Some(Box::new(child_status))),
+            )),
         }
     }
 
@@ -757,8 +853,7 @@ impl Parser {
                 }
                 None => {
                     return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadExpr(
-                        scanned,
-                        None,
+                        scanned, None,
                     )));
                 }
             }
@@ -790,8 +885,7 @@ impl Parser {
                 Some(t) => t,
                 None => {
                     return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadString(
-                        scanned,
-                        None,
+                        scanned, None,
                     )));
                 }
             };
@@ -841,13 +935,14 @@ impl Parser {
                 let mut scanned = VecDeque::new();
                 scanned.push_back(colon);
                 return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadKeyword(
-                    scanned,
-                    None,
+                    scanned, None,
                 )));
             }
         };
 
-        Ok(ParsedExpr::Completed(Expr::Atom(Atom::read_keyword(&token))))
+        Ok(ParsedExpr::Completed(Expr::Atom(Atom::read_keyword(
+            &token,
+        ))))
     }
 
     /// Reads a comment line prefixed with a semicolon.
@@ -896,7 +991,9 @@ impl Parser {
         }
 
         if !res.is_empty() {
-            Ok(ParsedExpr::Completed(Expr::Comment(res.trim_end().to_string())))
+            Ok(ParsedExpr::Completed(Expr::Comment(
+                res.trim_end().to_string(),
+            )))
         } else {
             Ok(ParsedExpr::Completed(Expr::Comment(String::new())))
         }
