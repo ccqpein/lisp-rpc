@@ -1,0 +1,23 @@
+* README
+
+This example demonstrates asynchronous streaming parsing of Lisp-RPC S-expressions into dynamic ~Data~ items using ~RawDataGenerator~ over TCP.
+
+Unlike standard length-prefixed protocols (such as in ~server-with-tcp~), ~RawDataGenerator~ parses continuous streams of Lisp S-expression data directly from an asynchronous byte stream without requiring any framing headers or length prefixes.
+
+** Running the example
+
+Run the automated end-to-end demo:
+#+begin_src sh
+  cargo run -p streaming-raw-data
+#+end_src
+
+Or run server and client in separate terminals:
+#+begin_src sh
+  # Terminal 1: Server
+  cargo run -p streaming-raw-data -- --server
+
+  # Terminal 2: Client
+  cargo run -p streaming-raw-data -- --client
+#+end_src
+
+Check the ~main.rs~ file for more information.
