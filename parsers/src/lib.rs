@@ -552,8 +552,7 @@ impl Parser {
 
                     if c == b' ' {
                         let prev_is_space = res.last().map_or(false, |le| le == " ")
-                            || (res.is_empty()
-                                && self.tokens.back().map_or(false, |te| te == " "));
+                            || (res.is_empty() && self.tokens.back().map_or(false, |te| te == " "));
                         if !prev_is_space {
                             res.push(" ".to_string());
                         }
