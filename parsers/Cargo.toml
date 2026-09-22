@@ -8,8 +8,5 @@ homepage.workspace = true
 description = "Core parser for Lisp-RPC, a lightweight, S-expression-based Remote Procedure Call protocol."
 
 [dependencies]
-itertools = "0"
-tracing = "0"
-tracing-subscriber = { version = "0", features = ["env-filter"] }
 anyhow = "1"
 futures-core = "0"

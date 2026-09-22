@@ -117,7 +117,7 @@ impl DefRPC {
         };
 
         let return_type = match rest_expr.get(2) {
-            Some(Expr::Quote(box e)) => match e {
+            Some(Expr::Quote(e)) => match e {
                 Expr::Atom(Atom {
                     value: TypeValue::Symbol(rn),
                 }) => Some(rn.to_string()),
@@ -154,7 +154,7 @@ impl DefRPC {
                     Expr::Atom(Atom {
                         value: TypeValue::Keyword(f),
                     }),
-                    Expr::Quote(box Expr::Atom(Atom {
+                    Expr::Quote(Expr::Atom(Atom {
                         value: TypeValue::Symbol(t),
                     })),
                 ) => {
@@ -168,12 +168,11 @@ impl DefRPC {
                     Expr::Atom(Atom {
                         value: TypeValue::Keyword(f),
                     }),
-                    Expr::Quote(box Expr::List(inner_exprs)) | Expr::List(inner_exprs),
+                    Expr::Quote(Expr::List(inner_exprs)) | Expr::List(inner_exprs),
                 ) => {
                     // anonymity msg type
                     // the map lisp-rpc defination can generate the other msg
                     // the list lisp-rpc defination can directly generated to Vec<T>
-
                     match (&inner_exprs[0], &inner_exprs[1]) {
                         // map type, the first ele is keyword
                         (
@@ -199,7 +198,7 @@ impl DefRPC {
                             Expr::Atom(Atom {
                                 value: TypeValue::Symbol(l),
                             }),
-                            Expr::Quote(box Expr::Atom(Atom {
+                            Expr::Quote(Expr::Atom(Atom {
                                 value: TypeValue::Symbol(t),
                             })),
                         ) if l == "list" => {
@@ -215,7 +214,7 @@ impl DefRPC {
                             Expr::Atom(Atom {
                                 value: TypeValue::Symbol(o),
                             }),
-                            Expr::Quote(box Expr::Atom(Atom {
+                            Expr::Quote(Expr::Atom(Atom {
                                 value: TypeValue::Symbol(t),
                             })),
                         ) if o == "optional" => {
@@ -301,7 +300,7 @@ impl RPCSpecLib for DefRPC {
 
 fn de_quoted(e: &Expr) -> &Expr {
     match e {
-        Expr::Quote(box expr) => de_quoted(expr),
+        Expr::Quote(expr) => de_quoted(expr),
         _ => e,
     }
 }

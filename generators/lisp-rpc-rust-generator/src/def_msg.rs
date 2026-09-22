@@ -138,7 +138,7 @@ impl DefMsg {
                     Expr::Atom(Atom {
                         value: TypeValue::Keyword(f),
                     }),
-                    Expr::Quote(box Expr::Atom(Atom {
+                    Expr::Quote(Expr::Atom(Atom {
                         value: TypeValue::Symbol(t),
                     })),
                 ) => {
@@ -152,7 +152,7 @@ impl DefMsg {
                     Expr::Atom(Atom {
                         value: TypeValue::Keyword(f),
                     }),
-                    Expr::Quote(box Expr::List(inner_exprs)) | Expr::List(inner_exprs),
+                    Expr::Quote(Expr::List(inner_exprs)) | Expr::List(inner_exprs),
                 ) => {
                     // anonymity msg type
                     // the map lisp-rpc defination can generate the other msg
@@ -168,7 +168,7 @@ impl DefMsg {
                             let new_msg_name = self.msg_name.to_string() + "-" + f;
                             res.append(
                                 &mut Self::new(&new_msg_name, inner_exprs, RPCDataType::Map)?
-                                     .create_gen_structs()?,
+                                    .create_gen_structs()?,
                             );
                             fields.push(GeneratedField::new(
                                 kebab_to_snake_case(f),
@@ -181,7 +181,7 @@ impl DefMsg {
                             Expr::Atom(Atom {
                                 value: TypeValue::Symbol(l),
                             }),
-                            Expr::Quote(box Expr::Atom(Atom {
+                            Expr::Quote(Expr::Atom(Atom {
                                 value: TypeValue::Symbol(t),
                             })),
                         ) if l == "list" => {
@@ -197,7 +197,7 @@ impl DefMsg {
                             Expr::Atom(Atom {
                                 value: TypeValue::Symbol(o),
                             }),
-                            Expr::Quote(box Expr::Atom(Atom {
+                            Expr::Quote(Expr::Atom(Atom {
                                 value: TypeValue::Symbol(t),
                             })),
                         ) if o == "optional" => {

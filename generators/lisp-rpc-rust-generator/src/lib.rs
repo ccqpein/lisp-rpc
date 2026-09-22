@@ -1,6 +1,6 @@
 //! Code generator library that transforms `.lisprpc` schema files into typed Rust client and server libraries.
 #![feature(iter_array_chunks)]
-#![feature(box_patterns)]
+#![feature(deref_patterns)]
 
 pub mod def_msg;
 pub mod def_package;
@@ -371,5 +371,3 @@ fn copy_recursive(source: &Path, destination: &Path) -> Result<()> {
     }
     Ok(())
 }
-
-

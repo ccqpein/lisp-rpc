@@ -8,7 +8,6 @@ homepage.workspace = true
 description = "Server implementation for Lisp-RPC, supporting Actix Web integration and schema-defined, type-checked RPC."
 
 [dependencies]
-actix-web = "4"
 anyhow = "1"
 lisp-rpc-rust-serializer = { workspace = true }
 serde = { version = "1", features = ["derive"] }
