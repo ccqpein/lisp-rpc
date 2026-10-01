@@ -115,7 +115,11 @@ impl GeneratedStruct {
     }
 
     /// Renders the struct code using template files from disk.
-    pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
+    pub fn gen_code_with_files(
+        &self,
+        template_files: &[impl AsRef<Path>],
+        arg: &GenerateArg,
+    ) -> Result<String> {
         let mut tera = Tera::default();
         let mut context = Context::new();
 
@@ -135,21 +139,33 @@ impl GeneratedStruct {
 
         self.insert_template(&mut context);
         result += &tera.render("def_struct.rs", &context)?;
-        result += "\n\n";
-        result += &tera.render("rpc_impl", &context)?;
+
+        match arg {
+            GenerateArg::Default => {}
+            GenerateArg::WithServer => {
+                result += "\n\n";
+                result += &tera.render("rpc_impl", &context)?;
+            }
+        }
 
         Ok(result)
     }
 
     /// Renders the struct code using an existing [`Tera`] instance.
-    pub fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+    pub fn gen_code_with_tera(&self, templates: &Tera, arg: &GenerateArg) -> Result<String> {
         let mut context = Context::new();
 
         let mut result = String::new();
         self.insert_template(&mut context);
         result += &templates.render("def_struct.rs", &context)?;
-        result += "\n\n";
-        result += &templates.render("rpc_impl", &context)?;
+
+        match arg {
+            GenerateArg::Default => {}
+            GenerateArg::WithServer => {
+                result += "\n\n";
+                result += &templates.render("rpc_impl", &context)?;
+            }
+        }
 
         Ok(result)
     }

@@ -24,6 +24,7 @@ struct Args {
 
     #[arg(short, long, value_name = "output-path", default_value = ".")]
     output_path: PathBuf,
+    //:= add the generatearg as the new arg
 }
 
 fn parse_spec_file(file: File) -> Result<SpecFile> {

@@ -124,11 +124,12 @@ impl SpecFile {
         &self,
         output_path: &PathBuf,
         embedded_files: impl Iterator<Item = (String, String)>,
+        arg: &GenerateArg,
     ) -> Result<()> {
         let mut tera = Tera::default();
 
         tera.add_raw_templates(embedded_files)?;
-        self.gen_code(output_path, tera)
+        self.gen_code(output_path, tera, arg)
     }
 
     /// Generates code using template files from disk.
@@ -136,6 +137,7 @@ impl SpecFile {
         &self,
         output_path: &PathBuf,
         templates: &[impl AsRef<Path>],
+        arg: &GenerateArg,
     ) -> Result<()> {
         let mut tera = Tera::default();
         let mut all_temps = vec![];
@@ -151,10 +153,10 @@ impl SpecFile {
 
         tera.add_template_files(all_temps)?;
 
-        self.gen_code(output_path, tera)
+        self.gen_code(output_path, tera, arg)
     }
 
-    fn gen_code(&self, output_path: &PathBuf, tera: Tera) -> Result<()> {
+    fn gen_code(&self, output_path: &PathBuf, tera: Tera, arg: &GenerateArg) -> Result<()> {
         let mut cargo_content = String::new();
         let mut lib_content = RPC_LIB_HEADER.to_string();
 
@@ -170,7 +172,7 @@ impl SpecFile {
                         .generate_structs()?;
 
                     for s in ss {
-                        lib_content += &s.gen_code_with_tera(&tera)?;
+                        lib_content += &s.gen_code_with_tera(&tera, arg)?;
                         if let RPCDataType::Map = s.rpc_type {
                             map_type_names.push(s.name)
                         }
@@ -261,6 +263,17 @@ impl<'s> Iterator for SpecFileIter<'s> {
         self.ind += 1;
         x
     }
+}
+
+/// The arg for generator
+#[derive(Debug, Clone)]
+enum GenerateArg {
+    /// only generate the structure but not impl the rpc trait for
+    /// server
+    Default,
+
+    /// impl the struct and rpc trait for rpc server
+    WithServer,
 }
 
 //
