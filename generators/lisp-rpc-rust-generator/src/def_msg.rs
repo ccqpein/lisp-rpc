@@ -241,20 +241,24 @@ impl DefMsg {
     }
 
     /// Generates Rust code for this message using template files from disk.
-    pub fn gen_code_with_files(&self, template_files: &[impl AsRef<Path>]) -> Result<String> {
+    pub fn gen_code_with_files(
+        &self,
+        template_files: &[impl AsRef<Path>],
+        arg: &GenerateArg,
+    ) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
-            bucket.push(s.gen_code_with_files(template_files)?);
+            bucket.push(s.gen_code_with_files(template_files, arg)?);
         }
 
         Ok(bucket.join("\n\n"))
     }
 
     /// Generates Rust code for this message using an existing [`Tera`] instance.
-    pub fn gen_code_with_tera(&self, templates: &Tera) -> Result<String> {
+    pub fn gen_code_with_tera(&self, templates: &Tera, arg: &GenerateArg) -> Result<String> {
         let mut bucket = vec![];
         for s in self.create_gen_structs()? {
-            bucket.push(s.gen_code_with_tera(templates)?);
+            bucket.push(s.gen_code_with_tera(templates, arg)?);
         }
 
         Ok(bucket.join("\n\n") + "\n\n")

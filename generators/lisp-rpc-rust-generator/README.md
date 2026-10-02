@@ -31,4 +31,13 @@ lisp-rpc-rust-generator \
         --output-path .
 ```
 
+To also generate RPC trait implementations for the RPC server, pass `--with-server` (or `-w`):
+
+```shell
+lisp-rpc-rust-generator \
+        --input-file spec.lisprpc \
+        --output-path . \
+        --with-server
+```
+
 Check the [example](../../examples/rust/spec-mode-generate-lib/) for more details.
