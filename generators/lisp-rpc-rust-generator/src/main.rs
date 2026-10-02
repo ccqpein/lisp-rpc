@@ -24,7 +24,10 @@ struct Args {
 
     #[arg(short, long, value_name = "output-path", default_value = ".")]
     output_path: PathBuf,
-    //:= add the generatearg as the new arg
+
+    /// Generation mode: default (structures only) or with-server (implements RPC server traits)
+    #[arg(short, long, value_enum, default_value_t = GenerateArg::Default, alias = "generatearg")]
+    generate_arg: GenerateArg,
 }
 
 fn parse_spec_file(file: File) -> Result<SpecFile> {
@@ -57,6 +60,7 @@ fn have_templates_path(
     output_path: &PathBuf,
     templates_path: &PathBuf,
     specs: &SpecFile,
+    arg: &GenerateArg,
 ) -> Result<()> {
     // read all template file
     let mut templates = vec![];
@@ -77,7 +81,7 @@ fn have_templates_path(
     }
 
     // specs generate the code
-    specs.gen_code_with_templates_files(output_path, &templates)?;
+    specs.gen_code_with_templates_files(output_path, &templates, arg)?;
 
     // after the previous line, the folder should already created
     // copy some files
@@ -93,7 +97,11 @@ fn have_templates_path(
     Ok(())
 }
 
-fn no_templates_path(output_path: &PathBuf, specs: &SpecFile) -> Result<()> {
+fn no_templates_path(
+    output_path: &PathBuf,
+    specs: &SpecFile,
+    arg: &GenerateArg,
+) -> Result<()> {
     let embedded_files =
         Assets::iter().filter_map(|full_name| match full_name.strip_suffix(".template") {
             Some(name) => match <Assets as Embed>::get(&full_name) {
@@ -109,7 +117,7 @@ fn no_templates_path(output_path: &PathBuf, specs: &SpecFile) -> Result<()> {
             None => None,
         });
 
-    specs.gen_code_raw_template(output_path, embedded_files)?;
+    specs.gen_code_raw_template(output_path, embedded_files, arg)?;
 
     // Handle lib.rs specifically
     if let Some(lib_rs) = Assets::get("lib.rs") {
@@ -149,8 +157,10 @@ fn main() -> Result<()> {
     let specs = parse_spec_file(file)?;
 
     match args.templates_path.as_ref() {
-        Some(templates_path) => have_templates_path(&args.output_path, templates_path, &specs)?,
-        None => no_templates_path(&args.output_path, &specs)?,
+        Some(templates_path) => {
+            have_templates_path(&args.output_path, templates_path, &specs, &args.generate_arg)?
+        }
+        None => no_templates_path(&args.output_path, &specs, &args.generate_arg)?,
     }
 
     Ok(())

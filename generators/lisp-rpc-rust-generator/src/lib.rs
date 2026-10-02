@@ -266,10 +266,11 @@ impl<'s> Iterator for SpecFileIter<'s> {
 }
 
 /// The arg for generator
-#[derive(Debug, Clone)]
-enum GenerateArg {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Default)]
+pub enum GenerateArg {
     /// only generate the structure but not impl the rpc trait for
     /// server
+    #[default]
     Default,
 
     /// impl the struct and rpc trait for rpc server
