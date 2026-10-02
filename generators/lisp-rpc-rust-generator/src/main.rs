@@ -25,9 +25,9 @@ struct Args {
     #[arg(short, long, value_name = "output-path", default_value = ".")]
     output_path: PathBuf,
 
-    /// Generation mode: default (structures only) or with-server (implements RPC server traits)
-    #[arg(short, long, value_enum, default_value_t = GenerateArg::Default, alias = "generatearg")]
-    generate_arg: GenerateArg,
+    /// Impl the struct and rpc trait for rpc server
+    #[arg(short, long)]
+    with_server: bool,
 }
 
 fn parse_spec_file(file: File) -> Result<SpecFile> {
@@ -156,11 +156,13 @@ fn main() -> Result<()> {
     let file = File::open(input_path)?;
     let specs = parse_spec_file(file)?;
 
+    let generate_arg = GenerateArg::from(args.with_server);
+
     match args.templates_path.as_ref() {
         Some(templates_path) => {
-            have_templates_path(&args.output_path, templates_path, &specs, &args.generate_arg)?
+            have_templates_path(&args.output_path, templates_path, &specs, &generate_arg)?
         }
-        None => no_templates_path(&args.output_path, &specs, &args.generate_arg)?,
+        None => no_templates_path(&args.output_path, &specs, &generate_arg)?,
     }
 
     Ok(())

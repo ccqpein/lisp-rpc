@@ -266,7 +266,7 @@ impl<'s> Iterator for SpecFileIter<'s> {
 }
 
 /// The arg for generator
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GenerateArg {
     /// only generate the structure but not impl the rpc trait for
     /// server
@@ -275,6 +275,16 @@ pub enum GenerateArg {
 
     /// impl the struct and rpc trait for rpc server
     WithServer,
+}
+
+impl From<bool> for GenerateArg {
+    fn from(with_server: bool) -> Self {
+        if with_server {
+            GenerateArg::WithServer
+        } else {
+            GenerateArg::Default
+        }
+    }
 }
 
 //
