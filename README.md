@@ -99,6 +99,14 @@ Check [this example](examples/rust/plain-mode-read-and-write-data/) for more det
 
 [spec-mode-generate-lib](examples/rust/spec-mode-generate-lib/) shows how to generate the Lisp-RPC library code using the generator.
 
+```shell
+# Generate data structures only (default)
+lisp-rpc-rust-generator --input-file spec.lisprpc --output-path .
+
+# Generate data structures and implement server RPC traits
+lisp-rpc-rust-generator --input-file spec.lisprpc --output-path . --with-server
+```
+
 ### Using the Server with Custom Structures
 
 Integrating custom structures is straightforward. If the structures derive `Serialize` and `Deserialize`, you need to implement `RPCType` with the `impl_to_rpc!` macro from the [server lib](server/).

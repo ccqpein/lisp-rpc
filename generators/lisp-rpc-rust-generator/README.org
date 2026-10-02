@@ -31,4 +31,13 @@ In most cases, you don't need to provide the templates folder, as the generator 
           --output-path .
 #+end_src
 
+To also generate RPC trait implementations for the RPC server, pass =--with-server= (or =-w=):
+
+#+begin_src shell
+  lisp-rpc-rust-generator \
+          --input-file spec.lisprpc \
+          --output-path . \
+          --with-server
+#+end_src
+
 Check the [[file:../../examples/rust/spec-mode-generate-lib/][example]] for more details.
