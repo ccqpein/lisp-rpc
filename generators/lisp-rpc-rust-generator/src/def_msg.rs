@@ -45,16 +45,11 @@ pub struct DefMsg {
 impl DefMsg {
     /// Creates a new [`DefMsg`] specification item.
     pub fn new(msg_name: &str, rest_expr: &[Expr], ty: RPCDataType) -> Result<Self> {
-        let doc = match &rest_expr[0] {
-            Expr::Atom(Atom {
+        let (doc, rest) = match rest_expr.first() {
+            Some(Expr::Atom(Atom {
                 value: TypeValue::String(doc),
-            }) => Some(doc.to_string()),
-            _ => None,
-        };
-
-        let rest = match doc {
-            Some(_) => rest_expr.get(1..).unwrap(),
-            None => rest_expr,
+            })) => (Some(doc.to_string()), rest_expr.get(1..).unwrap_or(&[])),
+            _ => (None, rest_expr),
         };
 
         if rest.iter().array_chunks().all(|[k, _]| {
@@ -67,8 +62,8 @@ impl DefMsg {
         }) {
             Ok(Self {
                 msg_name: msg_name.to_string(),
-                doc: doc,
-                rest_expr: rest_expr.to_vec(),
+                doc,
+                rest_expr: rest.to_vec(),
                 msg_ty: ty,
             })
         } else {

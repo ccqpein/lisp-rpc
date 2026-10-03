@@ -36,7 +36,7 @@ pub struct DefRPC {
     pub rpc_name: String,
 
     /// The doc of this rpc
-    doc: Option<String>,
+    pub doc: Option<String>,
 
     /// Keyword-type argument pairs for the RPC request.
     pub args: Vec<Expr>,
@@ -108,22 +108,25 @@ impl DefRPC {
         };
 
         // try to get the doc
-        let doc = match &rest_expr[1] {
-            Expr::Atom(Atom {
+        let (doc, args_expr, return_type_expr) = match rest_expr.get(1) {
+            Some(Expr::Atom(Atom {
                 value: TypeValue::String(doc),
-            }) => Some(doc.to_string()),
-            _ => None,
+            })) => (Some(doc.to_string()), rest_expr.get(2), rest_expr.get(3)),
+            _ => (None, rest_expr.get(1), rest_expr.get(2)),
         };
 
-        let rest = match doc {
-            Some(_) => rest_expr.get(1..).unwrap(),
-            None => rest_expr,
-        };
-
-        //dbg!(&rest_expr);
-        let arguments = match de_quoted(&rest[1]) {
-            Expr::List(exprs) => exprs,
-            _ => {
+        let arguments = match args_expr {
+            Some(args) => match de_quoted(args) {
+                Expr::List(exprs) => exprs,
+                _ => {
+                    anyhow::bail!(DefRPCError {
+                        msg: "parsing failed, second arguments has to be list of keyword-value pairs"
+                            .to_string(),
+                        err_type: DefRPCErrorType::InvalidInput,
+                    });
+                }
+            },
+            None => {
                 anyhow::bail!(DefRPCError {
                     msg: "parsing failed, second arguments has to be list of keyword-value pairs"
                         .to_string(),
@@ -132,14 +135,14 @@ impl DefRPC {
             }
         };
 
-        let return_type = match rest.get(2) {
-            Some(Expr::Quote(e)) => match e {
+        let return_type = match return_type_expr {
+            Some(Expr::Quote(e)) => match e.as_ref() {
                 Expr::Atom(Atom {
                     value: TypeValue::Symbol(rn),
                 }) => Some(rn.to_string()),
                 _ => {
                     anyhow::bail!(DefRPCError {
-                        msg: "parsing failed, quoted quoted".to_string(),
+                        msg: "parsing failed, quoted symbol expected for return type".to_string(),
                         err_type: DefRPCErrorType::InvalidInput,
                     });
                 }
