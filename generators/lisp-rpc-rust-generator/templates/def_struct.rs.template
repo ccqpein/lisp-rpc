@@ -1,5 +1,7 @@
 {% if comment -%}
-{{ comment }}
+{% for line in comment | split(pat="\n") -%}
+{% if line is starting_with("///") %}{{ line }}{% else %}/// {{ line }}{% endif %}
+{% endfor -%}
 {% endif -%}
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct {{ name }} {
