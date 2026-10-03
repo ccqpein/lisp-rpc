@@ -91,6 +91,7 @@ impl GeneratedStruct {
     pub fn insert_template(&self, ctx: &mut Context) {
         ctx.insert("name", &self.name);
         ctx.insert("fields", &self.fields);
+        ctx.insert("comment", &self.comment);
 
         match self.rpc_type {
             RPCDataType::Map => {
