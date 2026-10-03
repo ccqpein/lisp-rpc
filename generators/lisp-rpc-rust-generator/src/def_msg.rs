@@ -32,6 +32,9 @@ impl Error for DefMsgError {}
 pub struct DefMsg {
     msg_name: String,
 
+    /// the doc of this msg
+    doc: Option<String>,
+
     /// the keywords and their types pairs
     rest_expr: Vec<Expr>,
 
@@ -42,7 +45,14 @@ pub struct DefMsg {
 impl DefMsg {
     /// Creates a new [`DefMsg`] specification item.
     pub fn new(msg_name: &str, rest_expr: &[Expr], ty: RPCDataType) -> Result<Self> {
-        if rest_expr.iter().array_chunks().all(|[k, _]| {
+        let (doc, rest) = match rest_expr.first() {
+            Some(Expr::Atom(Atom {
+                value: TypeValue::String(doc),
+            })) => (Some(doc.to_string()), rest_expr.get(1..).unwrap_or(&[])),
+            _ => (None, rest_expr),
+        };
+
+        if rest.iter().array_chunks().all(|[k, _]| {
             matches!(
                 k,
                 Expr::Atom(Atom {
@@ -52,7 +62,8 @@ impl DefMsg {
         }) {
             Ok(Self {
                 msg_name: msg_name.to_string(),
-                rest_expr: rest_expr.to_vec(),
+                doc,
+                rest_expr: rest.to_vec(),
                 msg_ty: ty,
             })
         } else {
@@ -232,7 +243,7 @@ impl DefMsg {
         res.push(GeneratedStruct::new(
             &self.msg_name,
             fields,
-            None,
+            self.doc.clone(),
             self.msg_ty.clone(),
             None,
         ));

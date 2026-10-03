@@ -35,6 +35,9 @@ pub struct DefRPC {
     /// The RPC command name identifier.
     pub rpc_name: String,
 
+    /// The doc of this rpc
+    pub doc: Option<String>,
+
     /// Keyword-type argument pairs for the RPC request.
     pub args: Vec<Expr>,
 
@@ -104,10 +107,26 @@ impl DefRPC {
             }
         };
 
-        //dbg!(&rest_expr);
-        let arguments = match de_quoted(&rest_expr[1]) {
-            Expr::List(exprs) => exprs,
-            _ => {
+        // try to get the doc
+        let (doc, args_expr, return_type_expr) = match rest_expr.get(1) {
+            Some(Expr::Atom(Atom {
+                value: TypeValue::String(doc),
+            })) => (Some(doc.to_string()), rest_expr.get(2), rest_expr.get(3)),
+            _ => (None, rest_expr.get(1), rest_expr.get(2)),
+        };
+
+        let arguments = match args_expr {
+            Some(args) => match de_quoted(args) {
+                Expr::List(exprs) => exprs,
+                _ => {
+                    anyhow::bail!(DefRPCError {
+                        msg: "parsing failed, second arguments has to be list of keyword-value pairs"
+                            .to_string(),
+                        err_type: DefRPCErrorType::InvalidInput,
+                    });
+                }
+            },
+            None => {
                 anyhow::bail!(DefRPCError {
                     msg: "parsing failed, second arguments has to be list of keyword-value pairs"
                         .to_string(),
@@ -116,14 +135,14 @@ impl DefRPC {
             }
         };
 
-        let return_type = match rest_expr.get(2) {
-            Some(Expr::Quote(e)) => match e {
+        let return_type = match return_type_expr {
+            Some(Expr::Quote(e)) => match e.as_ref() {
                 Expr::Atom(Atom {
                     value: TypeValue::Symbol(rn),
                 }) => Some(rn.to_string()),
                 _ => {
                     anyhow::bail!(DefRPCError {
-                        msg: "parsing failed, quoted quoted".to_string(),
+                        msg: "parsing failed, quoted symbol expected for return type".to_string(),
                         err_type: DefRPCErrorType::InvalidInput,
                     });
                 }
@@ -139,6 +158,7 @@ impl DefRPC {
 
         Ok(Self {
             rpc_name,
+            doc,
             args: arguments.to_vec(),
             return_type,
         })
@@ -249,7 +269,7 @@ impl DefRPC {
         res.push(GeneratedStruct::new(
             &self.rpc_name,
             fields,
-            None,
+            self.doc.clone(),
             RPCDataType::Rpc,
             self.return_type.clone(),
         ));

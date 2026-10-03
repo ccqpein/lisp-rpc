@@ -1,7 +1,12 @@
+{% if comment -%}
+{% for line in comment | split(pat="\n") -%}
+{% if line is starting_with("///") %}{{ line }}{% else %}/// {{ line }}{% endif %}
+{% endfor -%}
+{% endif -%}
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct {{ name }} {
 {%- for field in fields %}
 {% if field.comment -%}
-    {{ field.comment | indent(width=4, indent_first_line=true) }}
+{{ field.comment | indent(width=4, first=true) }}
 {% endif %}    pub {{ field.name }}: {{ field.field_type }},{%- endfor %}
 }
