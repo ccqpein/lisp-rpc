@@ -35,6 +35,9 @@ pub struct DefRPC {
     /// The RPC command name identifier.
     pub rpc_name: String,
 
+    /// The doc of this rpc
+    doc: Option<String>,
+
     /// Keyword-type argument pairs for the RPC request.
     pub args: Vec<Expr>,
 
@@ -104,8 +107,21 @@ impl DefRPC {
             }
         };
 
+        // try to get the doc
+        let doc = match &rest_expr[1] {
+            Expr::Atom(Atom {
+                value: TypeValue::String(doc),
+            }) => Some(doc.to_string()),
+            _ => None,
+        };
+
+        let rest = match doc {
+            Some(_) => rest_expr.get(1..).unwrap(),
+            None => rest_expr,
+        };
+
         //dbg!(&rest_expr);
-        let arguments = match de_quoted(&rest_expr[1]) {
+        let arguments = match de_quoted(&rest[1]) {
             Expr::List(exprs) => exprs,
             _ => {
                 anyhow::bail!(DefRPCError {
@@ -116,7 +132,7 @@ impl DefRPC {
             }
         };
 
-        let return_type = match rest_expr.get(2) {
+        let return_type = match rest.get(2) {
             Some(Expr::Quote(e)) => match e {
                 Expr::Atom(Atom {
                     value: TypeValue::Symbol(rn),
@@ -139,6 +155,7 @@ impl DefRPC {
 
         Ok(Self {
             rpc_name,
+            doc,
             args: arguments.to_vec(),
             return_type,
         })
@@ -249,7 +266,7 @@ impl DefRPC {
         res.push(GeneratedStruct::new(
             &self.rpc_name,
             fields,
-            None,
+            self.doc.clone(),
             RPCDataType::Rpc,
             self.return_type.clone(),
         ));
