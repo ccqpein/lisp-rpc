@@ -6,6 +6,7 @@ members = [
   "serializer",
   "server",
   "raw-data/lisp-rpc-rust-raw-data",
+  "benches",
 
   "generators/lisp-rpc-rust-generator-macro", # deprecated
 
@@ -15,6 +16,9 @@ members = [
   "examples/rust/server-with-tcp",
   "examples/rust/streaming-raw-data",
 ]
+
+[profile.bench]
+debug = true
 
 [workspace.package]
 license = "MIT"
