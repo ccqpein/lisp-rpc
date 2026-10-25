@@ -62,6 +62,11 @@ where
 pub trait RpcHandler: Send + Sync {
     /// Dispatches the raw S-expression string to the inner handler.
     fn handle(&self, raw_data: &str) -> Result<Box<dyn ToRPCType>>;
+
+    /// Dispatches the raw S-expression string and serializes the response directly without boxing.
+    fn handle_to_str(&self, raw_data: &str) -> Result<String> {
+        self.handle(raw_data)?.serialize_lisp()
+    }
 }
 
 /// A concrete handler that knows its own request type T
@@ -81,6 +86,13 @@ where
             lisp_rpc_from_str(raw_data).map_err(|e| anyhow!("Deserialization failed: {}", e))?;
         let resp = self.func.call(req)?;
         Ok(Box::new(resp))
+    }
+
+    fn handle_to_str(&self, raw_data: &str) -> Result<String> {
+        let req: T =
+            lisp_rpc_from_str(raw_data).map_err(|e| anyhow!("Deserialization failed: {}", e))?;
+        let resp = self.func.call(req)?;
+        resp.serialize_lisp()
     }
 }
 
@@ -201,14 +213,11 @@ impl RPCServer {
         // 2. Find the registered handler
         let handler = self
             .handlers
-            .get(&command)
+            .get(command)
             .ok_or_else(|| anyhow!("Unknown command: {}", command))?;
 
-        // 3. Execute the handler to get the trait object
-        let resp_obj = handler.handle(raw_data)?;
-
-        // 4. Serialize the response using the trait object's method
-        resp_obj.serialize_lisp()
+        // 3. Execute the handler and serialize the response directly without boxing
+        handler.handle_to_str(raw_data)
     }
 
     /// Dispatches a raw Lisp-RPC string asynchronously and returns the serialized response.
@@ -218,13 +227,12 @@ impl RPCServer {
             extract_command_name(raw_data).ok_or_else(|| anyhow!("Invalid RPC format"))?;
 
         // 2. Caution: Find the registered handler (check sync first)
-        if let Some(handler) = self.handlers.get(&command) {
-            let resp_obj = handler.handle(raw_data)?;
-            return resp_obj.serialize_lisp();
+        if let Some(handler) = self.handlers.get(command) {
+            return handler.handle_to_str(raw_data);
         }
 
         // 3. Find the registered async handler
-        if let Some(handler) = self.async_handlers.get(&command) {
+        if let Some(handler) = self.async_handlers.get(command) {
             let resp_obj = handler.handle(raw_data).await?;
             return resp_obj.serialize_lisp();
         }
@@ -233,8 +241,9 @@ impl RPCServer {
     }
 }
 
-/// Helper to get the first symbol from "(symbol ...)"
-fn extract_command_name(raw: &str) -> Option<String> {
+/// Helper to get the first symbol slice from "(symbol ...)" without allocating
+#[inline]
+fn extract_command_name(raw: &str) -> Option<&str> {
     let trimmed = raw.trim().trim_start_matches('(').trim_end_matches(')');
-    trimmed.split_whitespace().next().map(|s| s.to_string())
+    trimmed.split_whitespace().next()
 }

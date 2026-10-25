@@ -8,13 +8,14 @@ mod macros;
 pub mod raw_data_generator;
 pub use raw_data_generator::RawDataGenerator;
 
-use std::{cell::OnceCell, collections::HashMap, error::Error, io::Cursor};
+use std::{cell::OnceCell, collections::HashMap, error::Error};
 
 use anyhow::{Context, Result, anyhow};
-use itertools::Itertools;
 use tracing::error;
 
-use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue, TypeValueNumber};
+use lisp_rpc_rust_parser::{
+    Atom, BorrowedAtom, BorrowedExpr, BorrowedTypeValue, Expr, Parser, TypeValue, TypeValueNumber,
+};
 
 /// The category of a [`DataError`].
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -44,6 +45,14 @@ pub trait FromExpr {
     fn from_expr(expr: &Expr) -> Result<Self>
     where
         Self: Sized;
+
+    /// Converts a zero-copy [`BorrowedExpr`] into `Self`.
+    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::from_expr(&expr.into_owned())
+    }
 }
 
 /// Trait for tokenizing and parsing a data structure directly from a string slice.
@@ -53,11 +62,10 @@ pub trait FromStr: FromExpr {
     where
         Self: Sized,
     {
-        let c = Cursor::new(s);
-        p.tokenize(c)?; // replace the tokens in parser
-        p.parse_one()?;
-
-        Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
+        let expr = p
+            .parse_one_borrowed(s)?
+            .context("Cannot get the last expr")?;
+        Self::from_borrowed_expr(expr)
     }
 }
 
@@ -80,10 +88,22 @@ pub trait GetAbleData {
 }
 
 /// Returns `true` if the given expression is a symbol representing `nil`.
+#[inline]
 pub fn is_nil_symbol(e: &Expr) -> bool {
     match e {
         Expr::Atom(a) => match &a.value {
-            TypeValue::Symbol(s) if s.to_lowercase().as_str() == "nil" => true,
+            TypeValue::Symbol(s) => s.eq_ignore_ascii_case("nil"),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+#[inline]
+fn is_nil_borrowed_symbol(e: &BorrowedExpr<'_>) -> bool {
+    match e {
+        BorrowedExpr::Atom(a) => match &a.value {
+            BorrowedTypeValue::Symbol(s) => s.eq_ignore_ascii_case("nil"),
             _ => false,
         },
         _ => false,
@@ -91,10 +111,11 @@ pub fn is_nil_symbol(e: &Expr) -> bool {
 }
 
 /// Returns `true` if the given expression is a symbol representing `t`.
+#[inline]
 pub fn is_t_symbol(e: &Expr) -> bool {
     match e {
         Expr::Atom(a) => match &a.value {
-            TypeValue::Symbol(s) if s.to_lowercase().as_str() == "t" => true,
+            TypeValue::Symbol(s) => s.eq_ignore_ascii_case("t"),
             _ => false,
         },
         _ => false,
@@ -131,17 +152,17 @@ impl Data {
             Expr::Quote(expr) => {
                 // list or map
                 match expr.as_ref() {
-                    Expr::List(_) => {
-                        let exprs = expr.filter_out_all_comments()?.collect::<Vec<_>>();
-                        match &exprs[0] {
+                    Expr::List(list) => {
+                        let first = list.iter().find(|item| !item.is_comment());
+                        match first {
                             // Map data
-                            Expr::Atom(Atom {
+                            Some(Expr::Atom(Atom {
                                 value: crate::TypeValue::Keyword(_),
                                 ..
-                            }) => Ok(Self::Map(MapData::from_expr(e)?)),
+                            })) => Ok(Self::Map(MapData::from_expr(e)?)),
 
                             // List data, list of atom or list of other expr data
-                            Expr::Atom(Atom { .. }) | Expr::List(_) | Expr::Quote(_) => {
+                            Some(Expr::Atom(Atom { .. }) | Expr::List(_) | Expr::Quote(_)) => {
                                 Ok(Self::List(ListData::from_expr(e)?))
                             }
 
@@ -160,7 +181,9 @@ impl Data {
             }
             Expr::Atom(a) => match &a.value {
                 // only t symbol can be the value
-                sy @ TypeValue::Symbol(x) if x.to_lowercase() == "t" => Ok(Self::Value(sy.clone())),
+                sy @ TypeValue::Symbol(x) if x.eq_ignore_ascii_case("t") => {
+                    Ok(Self::Value(sy.clone()))
+                }
 
                 // else symbol not support yet
                 TypeValue::Symbol(_) => {
@@ -174,7 +197,55 @@ impl Data {
             },
 
             Expr::Comment(_) => Err(anyhow!(DataError {
-                msg: format!("cannot generate Data from the comment"),
+                msg: "cannot generate Data from the comment".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            })),
+        }
+    }
+
+    /// Converts a zero-copy [`BorrowedExpr`] into a [`Data`] instance without intermediate AST cloning.
+    pub fn from_borrowed_expr(e: BorrowedExpr<'_>) -> Result<Self> {
+        match e {
+            BorrowedExpr::List(_) => Ok(Self::Data(ExprData::from_borrowed_expr(e)?)),
+            BorrowedExpr::Quote(expr) => match *expr {
+                BorrowedExpr::List(ref list) => {
+                    let first = list.iter().find(|item| !item.is_comment());
+                    match first {
+                        Some(BorrowedExpr::Atom(BorrowedAtom {
+                            value: BorrowedTypeValue::Keyword(_),
+                        })) => Ok(Self::Map(MapData::from_borrowed_list(*expr)?)),
+                        Some(
+                            BorrowedExpr::Atom(_)
+                            | BorrowedExpr::List(_)
+                            | BorrowedExpr::Quote(_),
+                        ) => Ok(Self::List(ListData::from_borrowed_list(*expr)?)),
+                        _ => Err(anyhow!(DataError {
+                            msg: format!("cannot generate Data from the expr {:?}", expr),
+                            err_type: DataErrorType::InvalidInput,
+                        })),
+                    }
+                }
+                BorrowedExpr::Atom(a) => Ok(Self::Value(a.value.into_owned())),
+                other => Err(anyhow!(DataError {
+                    msg: format!("cannot generate Data from the expr {:?}", other),
+                    err_type: DataErrorType::InvalidInput,
+                })),
+            },
+            BorrowedExpr::Atom(a) => match &a.value {
+                BorrowedTypeValue::Symbol(x) if x.eq_ignore_ascii_case("t") => {
+                    Ok(Self::Value(a.value.into_owned()))
+                }
+                BorrowedTypeValue::Symbol(_) => {
+                    error!("this symbol cannot be data");
+                    Err(anyhow!(DataError {
+                        msg: format!("cannot generate Data from the symbol {:?}", a),
+                        err_type: DataErrorType::InvalidInput,
+                    }))
+                }
+                _ => Ok(Self::Value(a.value.into_owned())),
+            },
+            BorrowedExpr::Comment(_) => Err(anyhow!(DataError {
+                msg: "cannot generate Data from the comment".to_string(),
                 err_type: DataErrorType::InvalidInput,
             })),
         }
@@ -188,15 +259,41 @@ impl Data {
         Ok(res)
     }
 
+    #[inline]
+    fn estimated_len(&self) -> usize {
+        match self {
+            Data::Data(d) => d.estimated_len(),
+            Data::List(l) => l.estimated_len(),
+            Data::Map(m) => m.estimated_len(),
+            Data::Value(tv) => match tv {
+                TypeValue::Symbol(s) => s.len(),
+                TypeValue::String(s) => s.len() + 2,
+                TypeValue::Keyword(s) => s.len() + 1,
+                TypeValue::Number(_) => 8,
+            },
+            Data::Error(e) => e.msg.len() + 32,
+        }
+    }
+
+    /// Appends the formatted S-expression representation directly into `buf`.
+    pub fn write_to(&self, buf: &mut String) {
+        match self {
+            Data::Data(value_data) => value_data.write_to(buf),
+            Data::List(list_data) => list_data.write_to(buf),
+            Data::Map(map_data) => map_data.write_to(buf),
+            Data::Value(type_value) => type_value.write_to(buf),
+            Data::Error(data_error) => {
+                use std::fmt::Write;
+                let _ = write!(buf, "{:?}", data_error);
+            }
+        }
+    }
+
     /// Serializes the data into a Lisp-RPC S-expression string.
     pub fn to_string(&self) -> String {
-        match self {
-            Data::Data(value_data) => value_data.to_string(),
-            Data::List(list_data) => list_data.to_string(),
-            Data::Map(map_data) => map_data.to_string(),
-            Data::Value(type_value) => type_value.to_string(),
-            Data::Error(data_error) => format!("{:?}", data_error),
-        }
+        let mut buf = String::with_capacity(self.estimated_len());
+        self.write_to(&mut buf);
+        buf
     }
 
     /// Extracts the unquoted string value from [`Data::Value`].
@@ -271,6 +368,13 @@ impl FromExpr for Data {
     {
         Self::from_expr(expr)
     }
+
+    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::from_borrowed_expr(expr)
+    }
 }
 
 impl FromStr for Data {}
@@ -309,9 +413,69 @@ pub struct ExprData {
 impl ExprData {
     /// Parses an [`ExprData`] from a list [`Expr`].
     pub fn from_expr(expr: &Expr) -> Result<Self> {
+        let Expr::List(list) = expr else {
+            return Err(anyhow!(DataError {
+                msg: "Not the Expr::List".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            }));
+        };
+
+        let has_comments = list.iter().any(Expr::is_comment);
+        if !has_comments {
+            if list.is_empty() {
+                return Err(anyhow!(DataError {
+                    msg: "empty data".to_string(),
+                    err_type: DataErrorType::InvalidInput,
+                }));
+            }
+            if list.len() % 2 != 1 {
+                return Err(anyhow!(DataError {
+                    msg: format!(
+                        "rest data from {}... has to be odd length elements",
+                        expr.to_string().get(0..10).unwrap_or("")
+                    ),
+                    err_type: DataErrorType::InvalidInput,
+                }));
+            }
+            let name = match &list[0] {
+                Expr::Atom(Atom {
+                    value: crate::TypeValue::Symbol(s),
+                }) => s,
+                _ => {
+                    return Err(anyhow!(DataError {
+                        msg: "data's first element has to be symbol".to_string(),
+                        err_type: DataErrorType::InvalidInput,
+                    }));
+                }
+            };
+            let mut rest_a = Vec::with_capacity((list.len() - 1) / 2);
+            for [k, v] in list[1..].iter().array_chunks() {
+                match k {
+                    Expr::Atom(Atom {
+                        value: crate::TypeValue::Keyword(_),
+                    }) => {
+                        if !is_nil_symbol(v) {
+                            rest_a.push((k.clone(), Data::from_expr(v)?));
+                        }
+                    }
+                    _ => {
+                        return Err(anyhow!(DataError {
+                            msg: "has to be keyword value pairs".to_string(),
+                            err_type: DataErrorType::InvalidInput,
+                        }));
+                    }
+                }
+            }
+            return Ok(Self {
+                name: name.to_string(),
+                rest_args: rest_a,
+                inner_map: OnceCell::new(),
+            });
+        }
+
         let exprs = expr.filter_out_all_comments()?.collect::<Vec<_>>();
 
-        if exprs.len() < 1 {
+        if exprs.is_empty() {
             return Err(anyhow!(DataError {
                 msg: "empty data".to_string(),
                 err_type: DataErrorType::InvalidInput,
@@ -340,7 +504,7 @@ impl ExprData {
             }
         };
 
-        let mut rest_a = vec![];
+        let mut rest_a = Vec::with_capacity((exprs.len() - 1) / 2);
         for [&k, v] in exprs[1..].into_iter().array_chunks() {
             match (k, v) {
                 (
@@ -369,6 +533,87 @@ impl ExprData {
         })
     }
 
+    /// Parses an [`ExprData`] from a zero-copy [`BorrowedExpr`].
+    pub fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self> {
+        let BorrowedExpr::List(mut list) = expr else {
+            return Err(anyhow!(DataError {
+                msg: "Not the Expr::List".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            }));
+        };
+
+        if list.iter().any(BorrowedExpr::is_comment) {
+            list.retain(|e| !e.is_comment());
+        }
+
+        if list.is_empty() {
+            return Err(anyhow!(DataError {
+                msg: "empty data".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            }));
+        }
+
+        if list.len() % 2 != 1 {
+            let tmp = BorrowedExpr::List(list);
+            return Err(anyhow!(DataError {
+                msg: format!(
+                    "rest data from {}... has to be odd length elements",
+                    tmp.to_string().get(0..10).unwrap_or("")
+                ),
+                err_type: DataErrorType::InvalidInput,
+            }));
+        }
+
+        let mut iter = list.into_iter();
+        let name = match iter.next() {
+            Some(BorrowedExpr::Atom(BorrowedAtom {
+                value: BorrowedTypeValue::Symbol(s),
+            })) => s.to_string(),
+            _ => {
+                return Err(anyhow!(DataError {
+                    msg: "data's first element has to be symbol".to_string(),
+                    err_type: DataErrorType::InvalidInput,
+                }));
+            }
+        };
+
+        let mut rest_a = Vec::with_capacity(iter.len() / 2);
+        while let Some(k) = iter.next() {
+            let Some(v) = iter.next() else {
+                return Err(anyhow!(DataError {
+                    msg: "has to be keyword value pairs".to_string(),
+                    err_type: DataErrorType::InvalidInput,
+                }));
+            };
+            match k {
+                BorrowedExpr::Atom(BorrowedAtom {
+                    value: BorrowedTypeValue::Keyword(kw),
+                }) => {
+                    if !is_nil_borrowed_symbol(&v) {
+                        rest_a.push((
+                            Expr::Atom(Atom {
+                                value: TypeValue::Keyword(kw.to_string()),
+                            }),
+                            Data::from_borrowed_expr(v)?,
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(anyhow!(DataError {
+                        msg: "has to be keyword value pairs".to_string(),
+                        err_type: DataErrorType::InvalidInput,
+                    }));
+                }
+            }
+        }
+
+        Ok(Self {
+            name,
+            rest_args: rest_a,
+            inner_map: OnceCell::new(),
+        })
+    }
+
     /// Creates a new [`ExprData`] with the given name and argument pairs.
     pub fn new<'a>(name: &str, rest_args: impl Iterator<Item = (Expr, Data)>) -> Result<Self> {
         let _ = TypeValue::make_symbol(name)?;
@@ -384,16 +629,48 @@ impl ExprData {
         &self.name
     }
 
+    #[inline]
+    fn estimated_len(&self) -> usize {
+        let mut len = 3 + self.name.len();
+        for (i, (k, v)) in self.rest_args.iter().enumerate() {
+            if i > 0 {
+                len += 1;
+            }
+            len += match k {
+                Expr::Atom(a) => match &a.value {
+                    TypeValue::Keyword(s) => s.len() + 1,
+                    TypeValue::Symbol(s) => s.len(),
+                    TypeValue::String(s) => s.len() + 2,
+                    TypeValue::Number(_) => 8,
+                },
+                _ => 8,
+            };
+            len += 1 + v.estimated_len();
+        }
+        len
+    }
+
+    /// Appends the formatted S-expression directly into `buf`.
+    pub fn write_to(&self, buf: &mut String) {
+        buf.push('(');
+        buf.push_str(&self.name);
+        buf.push(' ');
+        for (i, (k, v)) in self.rest_args.iter().enumerate() {
+            if i > 0 {
+                buf.push(' ');
+            }
+            k.write_to(buf);
+            buf.push(' ');
+            v.write_to(buf);
+        }
+        buf.push(')');
+    }
+
     /// Serializes the expression into an S-expression string.
     pub fn to_string(&self) -> String {
-        format!(
-            "({} {})",
-            self.name,
-            self.rest_args
-                .iter()
-                .map(|(k, v)| format!("{} {}", k.to_string(), v.to_string()))
-                .join(" ")
-        )
+        let mut buf = String::with_capacity(self.estimated_len());
+        self.write_to(&mut buf);
+        buf
     }
 
     /// Retrieves a field value by its keyword name.
@@ -411,6 +688,13 @@ impl FromExpr for ExprData {
         Self: Sized,
     {
         Self::from_expr(expr)
+    }
+
+    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::from_borrowed_expr(expr)
     }
 }
 
@@ -463,6 +747,19 @@ impl FromExpr for ListData {
     {
         Self::from_expr(expr)
     }
+
+    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        match expr {
+            BorrowedExpr::Quote(inner) => Self::from_borrowed_list(*inner),
+            _ => Err(anyhow!(DataError {
+                msg: "cannot generate ListData from this expr, need quoted".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            })),
+        }
+    }
 }
 
 impl FromStr for ListData {}
@@ -479,7 +776,7 @@ impl ListData {
         match expr {
             Expr::Quote(expr) => match expr.as_ref() {
                 Expr::List(exprs) => {
-                    let mut res = vec![];
+                    let mut res = Vec::with_capacity(exprs.len());
                     for e in exprs {
                         if !is_nil_symbol(e) {
                             res.push(Data::from_expr(e)?);
@@ -501,12 +798,51 @@ impl ListData {
         }
     }
 
+    fn from_borrowed_list(expr: BorrowedExpr<'_>) -> Result<Self> {
+        match expr {
+            BorrowedExpr::List(exprs) => {
+                let mut res = Vec::with_capacity(exprs.len());
+                for e in exprs {
+                    if !is_nil_borrowed_symbol(&e) {
+                        res.push(Data::from_borrowed_expr(e)?);
+                    }
+                }
+                Ok(Self { inner_data: res })
+            }
+            _ => Err(anyhow!(DataError {
+                msg: "cannot generate ListData from this expr, not list after quote".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            })),
+        }
+    }
+
+    #[inline]
+    fn estimated_len(&self) -> usize {
+        3 + self.inner_data.len().saturating_sub(1)
+            + self
+                .inner_data
+                .iter()
+                .map(Data::estimated_len)
+                .sum::<usize>()
+    }
+
+    /// Appends the formatted quoted list directly into `buf`.
+    pub fn write_to(&self, buf: &mut String) {
+        buf.push_str("'(");
+        for (i, d) in self.inner_data.iter().enumerate() {
+            if i > 0 {
+                buf.push(' ');
+            }
+            d.write_to(buf);
+        }
+        buf.push(')');
+    }
+
     /// Serializes the list into a quoted S-expression string.
     pub fn to_string(&self) -> String {
-        format!(
-            "'({})",
-            self.inner_data.iter().map(|d| d.to_string()).join(" ")
-        )
+        let mut buf = String::with_capacity(self.estimated_len());
+        self.write_to(&mut buf);
+        buf
     }
 
     /// Returns the number of elements in the list.
@@ -545,10 +881,12 @@ pub struct MapData {
 impl MapData {
     /// Parses a [`MapData`] from a quoted map [`Expr`].
     pub fn from_expr(expr: &Expr) -> Result<Self> {
-        let mut kwrds = vec![];
-        let map = match expr {
+        match expr {
             Expr::Quote(e2) => match e2.as_ref() {
                 Expr::List(ee) => {
+                    let cap = ee.len() / 2;
+                    let mut kwrds = Vec::with_capacity(cap);
+                    let mut table = HashMap::with_capacity(cap);
                     for [k, v] in ee.iter().array_chunks() {
                         match (k, v) {
                             (
@@ -558,7 +896,9 @@ impl MapData {
                                 _,
                             ) => {
                                 if !is_nil_symbol(v) {
-                                    kwrds.push(k.to_string());
+                                    let key = k.to_string();
+                                    kwrds.push(key.clone());
+                                    table.insert(key, Data::from_expr(v)?);
                                 }
                             }
                             _ => {
@@ -571,45 +911,112 @@ impl MapData {
                         }
                     }
 
-                    DataMap::from_exprs(&ee)?
+                    Ok(Self {
+                        kwrds,
+                        map: DataMap { hash_map: table },
+                    })
                 }
-                _ => {
-                    return Err(anyhow!(DataError {
-                        msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
-                        err_type: DataErrorType::InvalidInput,
-                    }));
-                }
-            },
-            _ => {
-                return Err(anyhow!(DataError {
+                _ => Err(anyhow!(DataError {
                     msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
                     err_type: DataErrorType::InvalidInput,
-                }));
-            }
-        };
+                })),
+            },
+            _ => Err(anyhow!(DataError {
+                msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            })),
+        }
+    }
 
-        Ok(Self { kwrds, map })
+    fn from_borrowed_list(expr: BorrowedExpr<'_>) -> Result<Self> {
+        match expr {
+            BorrowedExpr::List(ee) => {
+                let cap = ee.len() / 2;
+                let mut kwrds = Vec::with_capacity(cap);
+                let mut table = HashMap::with_capacity(cap);
+                let mut iter = ee.into_iter();
+                while let Some(k) = iter.next() {
+                    let Some(v) = iter.next() else {
+                        break;
+                    };
+                    match k {
+                        BorrowedExpr::Atom(BorrowedAtom {
+                            value: BorrowedTypeValue::Keyword(k),
+                        }) => {
+                            if !is_nil_borrowed_symbol(&v) {
+                                let key = k.to_string();
+                                kwrds.push(key.clone());
+                                table.insert(key, Data::from_borrowed_expr(v)?);
+                            }
+                        }
+                        _ => {
+                            return Err(anyhow!(DataError {
+                                msg: "MapData has to be keyword pairs like '(:a 1 :b 2)"
+                                    .to_string(),
+                                err_type: DataErrorType::InvalidInput,
+                            }));
+                        }
+                    }
+                }
+                Ok(Self {
+                    kwrds,
+                    map: DataMap { hash_map: table },
+                })
+            }
+            _ => Err(anyhow!(DataError {
+                msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            })),
+        }
+    }
+
+    #[inline]
+    fn estimated_len(&self) -> usize {
+        let mut len = 3;
+        for (i, k) in self.kwrds.iter().enumerate() {
+            if i > 0 {
+                len += 1;
+            }
+            len += 2 + k.len();
+            if let Some(v) = self.map.get(k) {
+                len += v.estimated_len();
+            } else {
+                len += 32;
+            }
+        }
+        len
+    }
+
+    /// Appends the formatted quoted map directly into `buf`.
+    pub fn write_to(&self, buf: &mut String) {
+        buf.push_str("'(");
+        for (i, k) in self.kwrds.iter().enumerate() {
+            if i > 0 {
+                buf.push(' ');
+            }
+            buf.push(':');
+            buf.push_str(k);
+            buf.push(' ');
+            match self.map.get(k) {
+                Some(v) => v.write_to(buf),
+                None => {
+                    let err = DataError {
+                        msg: "corrupted data".to_string(),
+                        err_type: DataErrorType::CorruptedData,
+                    };
+                    use std::fmt::Write;
+                    let _ = write!(buf, "{:?}", err);
+                }
+            }
+        }
+        buf.push(')');
     }
 
     /// Serializes the map into a quoted S-expression string.
     pub fn to_string(&self) -> String {
-        format!(
-            "'({})",
-            self.kwrds
-                .iter()
-                .map(|k| [
-                    format!(":{}", k.to_string()),
-                    self.map
-                        .get(k)
-                        .unwrap_or(&Data::Error(DataError {
-                            msg: "corrupted data".to_string(),
-                            err_type: DataErrorType::CorruptedData
-                        }))
-                        .to_string()
-                ])
-                .flatten()
-                .join(" ")
-        )
+        let mut buf = String::with_capacity(self.estimated_len());
+        self.write_to(&mut buf);
+        buf
     }
 
     /// Retrieves a value by its key name.
@@ -634,6 +1041,19 @@ impl FromExpr for MapData {
         Self: Sized,
     {
         Self::from_expr(expr)
+    }
+
+    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        match expr {
+            BorrowedExpr::Quote(inner) => Self::from_borrowed_list(*inner),
+            _ => Err(anyhow!(DataError {
+                msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
+                err_type: DataErrorType::InvalidInput,
+            })),
+        }
     }
 }
 
@@ -676,34 +1096,8 @@ struct DataMap {
 }
 
 impl DataMap {
-    fn from_exprs(exprs: &[Expr]) -> Result<Self> {
-        let mut table = HashMap::new();
-        for [k, v] in exprs.iter().array_chunks() {
-            match (k, v) {
-                (
-                    Expr::Atom(Atom {
-                        value: crate::TypeValue::Keyword(k),
-                    }),
-                    _,
-                ) => {
-                    if !is_nil_symbol(v) {
-                        table.insert(k.to_string(), Data::from_expr(v)?);
-                    }
-                }
-                _ => {
-                    return Err(anyhow!(DataError {
-                        msg: "has to be keyword value pairs for making the data map".to_string(),
-                        err_type: DataErrorType::InvalidInput,
-                    }));
-                }
-            }
-        }
-
-        Ok(Self { hash_map: table })
-    }
-
     fn new(kv: &[(Expr, Data)]) -> Result<Self> {
-        let mut table = HashMap::new();
+        let mut table = HashMap::with_capacity(kv.len());
 
         for (e, d) in kv {
             match (e, d) {

@@ -6,6 +6,9 @@ edition = "2024"
 
 [dependencies]
 lisp-rpc-rust-parser = { workspace = true }
+lisp-rpc-rust-raw-data = { workspace = true }
+lisp-rpc-rust-serializer = { workspace = true }
+serde = { version = "1", features = ["derive"] }
 futures-core = "0"
 
 [dev-dependencies]

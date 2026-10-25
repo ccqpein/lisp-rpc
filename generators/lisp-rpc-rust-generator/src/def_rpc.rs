@@ -1,7 +1,6 @@
 //! Parser and code generation handler for `def-rpc` schema declarations.
 
 use lisp_rpc_rust_parser::Parser;
-use std::io::Cursor;
 
 use std::error::Error;
 
@@ -53,8 +52,7 @@ impl DefRPC {
             None => Default::default(),
         };
 
-        p.tokenize(Cursor::new(source))?;
-        p.parse_one()?;
+        p.parse_str(source)?;
 
         Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }

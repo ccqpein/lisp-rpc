@@ -1,7 +1,7 @@
 //! File-level utilities for reading and parsing Lisp-RPC data files.
 
 use anyhow::{Context, Result};
-use std::{collections::HashMap, fs::File, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{Data, ExprData};
 
@@ -15,18 +15,21 @@ pub struct DataFile {
 impl DataFile {
     /// Parses all S-expression data records from the specified file path.
     pub fn new(file: PathBuf) -> Result<Self> {
-        let file = File::open(&file)
+        let content = std::fs::read_to_string(&file)
             .map_err(|e| anyhow::anyhow!("Failed to open config file at {:?}: {}", file, e))?;
 
-        let mut parser: lisp_rpc_rust_parser::Parser = Default::default();
+        let parser: lisp_rpc_rust_parser::Parser = Default::default();
+        let exprs = parser.parse_borrowed(&content)?;
 
-        parser.tokenize(file)?;
-        parser.parse()?;
+        let mut df = DataFile {
+            datas: Vec::with_capacity(exprs.len()),
+        };
 
-        let mut df: DataFile = Default::default();
-
-        for e in parser.iter_expr() {
-            let Data::Data(d) = Data::from_expr(e).context("Generate Data failed")? else {
+        for e in exprs {
+            if e.is_comment() {
+                continue;
+            }
+            let Data::Data(d) = Data::from_borrowed_expr(e).context("Generate Data failed")? else {
                 anyhow::bail!("File can only contains the expr data")
             };
 

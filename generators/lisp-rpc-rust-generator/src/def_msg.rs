@@ -76,15 +76,12 @@ impl DefMsg {
 
     /// Parses a [`DefMsg`] declaration from a string slice.
     pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
-        use std::io::Cursor;
-
         let mut p = match parser {
             Some(p) => p,
             None => Default::default(),
         };
 
-        p.tokenize(Cursor::new(source))?;
-        p.parse_one()?;
+        p.parse_str(source)?;
 
         Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
     }

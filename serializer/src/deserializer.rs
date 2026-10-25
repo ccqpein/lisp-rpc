@@ -17,12 +17,56 @@ impl<'de> LispRPCDeserializer<'de> {
         LispRPCDeserializer { input }
     }
 
+    #[inline(always)]
     fn eat_whitespace(&mut self) {
-        self.input = self.input.trim_start();
+        let bytes = self.input.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i > 0 {
+            // SAFETY: i is on an ASCII whitespace boundary
+            self.input = unsafe { self.input.get_unchecked(i..) };
+        }
+        if !self.input.is_empty() && !self.input.as_bytes()[0].is_ascii() {
+            self.input = self.input.trim_start();
+        }
+    }
+
+    #[inline(always)]
+    fn next_token(&mut self) -> &'de str {
+        let bytes = self.input.as_bytes();
+        let len = bytes.len();
+        let mut i = 0;
+        while i < len {
+            let b = bytes[i];
+            if b == b')' || b.is_ascii_whitespace() {
+                break;
+            }
+            if !b.is_ascii() {
+                let end = i
+                    + self.input[i..]
+                        .find(|c: char| c.is_whitespace() || c == ')')
+                        .unwrap_or(len - i);
+                let s = &self.input[..end];
+                self.input = &self.input[end..];
+                return s;
+            }
+            i += 1;
+        }
+        // SAFETY: i is on an ASCII boundary within valid UTF-8 self.input
+        let s = unsafe { self.input.get_unchecked(..i) };
+        self.input = unsafe { self.input.get_unchecked(i..) };
+        s
     }
 
     fn peek_char(&self) -> Option<char> {
-        self.input.chars().next()
+        let b = *self.input.as_bytes().first()?;
+        if b.is_ascii() {
+            Some(b as char)
+        } else {
+            self.input.chars().next()
+        }
     }
 
     fn normalize_variant(&self, ident: &str) -> String {
@@ -31,6 +75,51 @@ impl<'de> LispRPCDeserializer<'de> {
         } else {
             ident.to_case(Case::Pascal)
         }
+    }
+
+    #[inline]
+    fn visit_normalized_variant<V>(
+        &self,
+        ident: &'de str,
+        visitor: V,
+    ) -> Result<V::Value, LispRPCSerializerError>
+    where
+        V: Visitor<'de>,
+    {
+        let bytes = ident.as_bytes();
+        if !bytes.is_empty() {
+            if bytes[0].is_ascii_uppercase() && !bytes.contains(&b'-') {
+                return visitor.visit_borrowed_str(ident);
+            }
+            if bytes.len() <= 64 {
+                let mut buf = [0u8; 64];
+                let mut out_len = 0;
+                let mut cap_next = true;
+                let mut simple = true;
+                for (i, &b) in bytes.iter().enumerate() {
+                    if b == b'-' {
+                        if i == 0 || i + 1 == bytes.len() || cap_next {
+                            simple = false;
+                            break;
+                        }
+                        cap_next = true;
+                    } else if b.is_ascii_lowercase() {
+                        buf[out_len] = if cap_next { b.to_ascii_uppercase() } else { b };
+                        out_len += 1;
+                        cap_next = false;
+                    } else {
+                        simple = false;
+                        break;
+                    }
+                }
+                if simple {
+                    // SAFETY: buf[..out_len] only contains ASCII alphabetic bytes
+                    let s = unsafe { std::str::from_utf8_unchecked(&buf[..out_len]) };
+                    return visitor.visit_str(s);
+                }
+            }
+        }
+        visitor.visit_string(self.normalize_variant(ident))
     }
 }
 
@@ -51,13 +140,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
                     self.deserialize_seq(visitor)
                 } else {
                     self.input = &self.input[1..];
-                    let end = self
-                        .input
-                        .find(|c: char| c.is_whitespace() || c == ')')
-                        .unwrap_or(self.input.len());
-                    let ident = &self.input[..end];
-                    self.input = &self.input[end..];
-                    visitor.visit_string(self.normalize_variant(ident))
+                    let ident = self.next_token();
+                    self.visit_normalized_variant(ident, visitor)
                 }
             }
             Some('(') => self.deserialize_struct("", &[], visitor),
@@ -116,12 +200,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         V: Visitor<'de>,
     {
         self.eat_whitespace();
-        let end = self
-            .input
-            .find(|c: char| c.is_whitespace() || c == ')')
-            .unwrap_or(self.input.len());
-        let s = &self.input[..end];
-        self.input = &self.input[end..];
+        let s = self.next_token();
         visitor.visit_i64(
             s.parse()
                 .map_err(|_| LispRPCSerializerError::Msg(format!("failed to parse i64: {}", s)))?,
@@ -154,12 +233,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         V: Visitor<'de>,
     {
         self.eat_whitespace();
-        let end = self
-            .input
-            .find(|c: char| c.is_whitespace() || c == ')')
-            .unwrap_or(self.input.len());
-        let s = &self.input[..end];
-        self.input = &self.input[end..];
+        let s = self.next_token();
         visitor.visit_u64(
             s.parse()
                 .map_err(|_| LispRPCSerializerError::Msg(format!("failed to parse u64: {}", s)))?,
@@ -178,12 +252,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         V: Visitor<'de>,
     {
         self.eat_whitespace();
-        let end = self
-            .input
-            .find(|c: char| c.is_whitespace() || c == ')')
-            .unwrap_or(self.input.len());
-        let s = &self.input[..end];
-        self.input = &self.input[end..];
+        let s = self.next_token();
         visitor.visit_f64(
             s.parse()
                 .map_err(|_| LispRPCSerializerError::Msg(format!("failed to parse f64: {}", s)))?,
@@ -375,7 +444,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         // Skip name
         let end = self
             .input
-            .find(|c: char| c.is_whitespace() || c == ')')
+            .as_bytes()
+            .iter()
+            .position(|&b| b == b')' || b.is_ascii_whitespace())
             .ok_or_else(|| LispRPCSerializerError::Msg("unexpected end".to_string()))?;
         self.input = &self.input[end..];
 
@@ -418,12 +489,40 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut LispRPCDeserializer<'de> {
         V: Visitor<'de>,
     {
         self.eat_whitespace();
-        let end = self
-            .input
-            .find(|c: char| c.is_whitespace() || c == ')')
-            .unwrap_or(self.input.len());
-        let ident = &self.input[..end];
-        self.input = &self.input[end..];
+        let ident = self.next_token();
+        let bytes = ident.as_bytes();
+        if !bytes.is_empty() && bytes.len() <= 64 {
+            let mut has_hyphen = false;
+            let mut simple = true;
+            let mut prev_hyphen = false;
+            for (i, &b) in bytes.iter().enumerate() {
+                if b == b'-' {
+                    if i == 0 || i + 1 == bytes.len() || prev_hyphen {
+                        simple = false;
+                        break;
+                    }
+                    has_hyphen = true;
+                    prev_hyphen = true;
+                } else if b.is_ascii_lowercase() {
+                    prev_hyphen = false;
+                } else {
+                    simple = false;
+                    break;
+                }
+            }
+            if simple {
+                if !has_hyphen {
+                    return visitor.visit_borrowed_str(ident);
+                }
+                let mut buf = [0u8; 64];
+                for (i, &b) in bytes.iter().enumerate() {
+                    buf[i] = if b == b'-' { b'_' } else { b };
+                }
+                // SAFETY: buf[..bytes.len()] only contains ASCII lowercase and '_'
+                let s = unsafe { std::str::from_utf8_unchecked(&buf[..bytes.len()]) };
+                return visitor.visit_str(s);
+            }
+        }
 
         visitor.visit_string(ident.to_case(Case::Snake))
     }
@@ -563,15 +662,8 @@ impl<'de, 'a> de::Deserializer<'de> for LispRPCVariantDeserializer<'a, 'de> {
         V: Visitor<'de>,
     {
         self.de.eat_whitespace();
-        let end = self
-            .de
-            .input
-            .find(|c: char| c.is_whitespace() || c == ')')
-            .unwrap_or(self.de.input.len());
-        let ident = &self.de.input[..end];
-        self.de.input = &self.de.input[end..];
-
-        visitor.visit_string(self.de.normalize_variant(ident))
+        let ident = self.de.next_token();
+        self.de.visit_normalized_variant(ident, visitor)
     }
 
     serde::forward_to_deserialize_any! {

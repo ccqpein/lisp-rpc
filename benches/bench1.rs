@@ -6,6 +6,9 @@ use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use futures_core::Stream;
 use lisp_rpc_rust_parser::*;
+use lisp_rpc_rust_raw_data::{Data, FromStr as RpcFromStr};
+use lisp_rpc_rust_serializer::{lisp_rpc_from_str, lisp_rpc_to_str};
+use serde::{Deserialize, Serialize};
 
 const SCHEMA_DEFS: &str = r#";; Book service schema definitions
 (def-msg language-perfer :lang 'string)
@@ -130,12 +133,112 @@ fn bench_expr_to_string(c: &mut Criterion) {
     });
 }
 
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct SearchProducts {
+    query: String,
+    category: Category,
+    sort_by: SortBy,
+    min_price: f64,
+    max_price: f64,
+    in_stock_only: bool,
+    discount_code: Option<String>,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct GetBookBench {
+    title: String,
+    version: String,
+    min_price: f64,
+    in_stock_only: bool,
+    discount_code: Option<String>,
+    lang: GetBookLangBench,
+    authors: AuthorsBench,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct GetBookLangBench {
+    lang_code: String,
+    encoding_id: i64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct AuthorsBench {
+    names: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum Category {
+    Electronics,
+    Books,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum SortBy {
+    PriceAsc,
+    PriceDesc,
+}
+
+const SERIALIZER_RPC: &str = r#"(search-products :query "mechanical keyboard" :category 'electronics :sort-by 'price-asc :min-price 49.99 :max-price 199.99 :in-stock-only t :discount-code nil :tags '("ergonomic" "wireless" "hot-swap"))"#;
+
+fn bench_raw_data_from_str(c: &mut Criterion) {
+    let mut parser = Parser::new().config_read_number(true);
+    c.bench_function("bench_raw_data_from_str", |b| {
+        b.iter(|| {
+            parser.clear().unwrap();
+            black_box(Data::from_str(&mut parser, black_box(REALISTIC_RPC)).unwrap())
+        })
+    });
+}
+
+fn bench_raw_data_to_string(c: &mut Criterion) {
+    let mut parser = Parser::new().config_read_number(true);
+    let data = Data::from_str(&mut parser, REALISTIC_RPC).unwrap();
+    c.bench_function("bench_raw_data_to_string", |b| {
+        b.iter(|| black_box(black_box(&data).to_string()))
+    });
+}
+
+fn bench_serializer_to_str(c: &mut Criterion) {
+    let req = GetBookBench {
+        title: "mechanical keyboard".to_string(),
+        version: "1984".to_string(),
+        min_price: 49.99,
+        in_stock_only: true,
+        discount_code: None,
+        lang: GetBookLangBench {
+            lang_code: "english".to_string(),
+            encoding_id: 64,
+        },
+        authors: AuthorsBench {
+            names: vec![
+                "ergonomic".to_string(),
+                "wireless".to_string(),
+                "hot-swap".to_string(),
+            ],
+        },
+    };
+    c.bench_function("bench_serializer_to_str", |b| {
+        b.iter(|| black_box(lisp_rpc_to_str(black_box(&req)).unwrap()))
+    });
+}
+
+fn bench_deserializer_from_str(c: &mut Criterion) {
+    c.bench_function("bench_deserializer_from_str", |b| {
+        b.iter(|| black_box(lisp_rpc_from_str::<SearchProducts>(black_box(SERIALIZER_RPC)).unwrap()))
+    });
+}
+
 criterion_group!(
     bench_advanced,
     bench_parse_schema_defs,
     bench_parse_batch_20,
     bench_stream_parser_chunked_32b,
     bench_expr_to_string,
+    bench_raw_data_from_str,
+    bench_raw_data_to_string,
+    bench_serializer_to_str,
+    bench_deserializer_from_str,
 );
 
 criterion_main!(bench_advanced);
