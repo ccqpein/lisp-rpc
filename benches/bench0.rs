@@ -77,6 +77,26 @@ fn bench_parse_realistic_reused_parser(c: &mut Criterion) {
     });
 }
 
+fn bench_parse_str_small(c: &mut Criterion) {
+    let mut parser = Parser::new();
+    c.bench_function("bench_parse_str_small", |b| {
+        b.iter(|| {
+            parser.parse_str(black_box(SMALL_RPC)).unwrap();
+            black_box(parser.pop_expr())
+        })
+    });
+}
+
+fn bench_parse_str_realistic(c: &mut Criterion) {
+    let mut parser = Parser::new();
+    c.bench_function("bench_parse_str_realistic", |b| {
+        b.iter(|| {
+            parser.parse_str(black_box(REALISTIC_RPC)).unwrap();
+            black_box(parser.pop_expr())
+        })
+    });
+}
+
 criterion_group!(
     bench_core,
     bench_tokenize_small,
@@ -84,6 +104,8 @@ criterion_group!(
     bench_tokenize_realistic,
     bench_parse_realistic_new_parser,
     bench_parse_realistic_reused_parser,
+    bench_parse_str_small,
+    bench_parse_str_realistic,
 );
 
 criterion_main!(bench_core);

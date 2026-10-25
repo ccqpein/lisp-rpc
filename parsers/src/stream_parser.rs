@@ -1,6 +1,5 @@
 //! Asynchronous stream parser for Lisp-RPC S-expressions.
 
-use std::io::Cursor;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -63,38 +62,59 @@ where
                 return Poll::Ready(Some(Ok(e)));
             }
 
-            // 2. Try to parse any tokens currently in the parser
-            if let Err(e) = this.p.parse() {
-                return Poll::Ready(Some(Err(e)));
-            }
-
-            // If parsing produced complete expression(s), yield the first one
-            if let Some(e) = this.p.pop_expr() {
-                return Poll::Ready(Some(Ok(e)));
+            // 2. If tokens were pre-populated on `this.p`, parse them first
+            if !this.p.tokens.is_empty() || this.p.status.is_incomplete() {
+                if let Err(e) = this.p.parse_stream_cache(false) {
+                    return Poll::Ready(Some(Err(e)));
+                }
+                if let Some(e) = this.p.pop_expr() {
+                    return Poll::Ready(Some(Ok(e)));
+                }
             }
 
             // 3. Need more data: poll the inner stream for the next byte chunk
             match Pin::new(&mut this.s).poll_next(cx) {
                 Poll::Ready(Some(Ok(chunk))) => {
-                    // Tokenize the incoming chunk (chunk.as_ref() implements std::io::Read)
-                    if let Err(_) = this.p.tokenize(Cursor::new(chunk.as_ref())) {
-                        this.p.status = ParsingStatus::Error;
-                        return Poll::Ready(Some(Err(ParserError::CorruptData(
-                            "failed to tokenize chunk from stream",
-                        ))));
+                    let bytes = chunk.as_ref();
+                    if bytes.is_empty() {
+                        continue;
                     }
-                    // Loop back to try parsing with the newly appended tokens
+                    let was_waiting_on_list = !this.p.byte_cache.is_empty()
+                        && this.p.tokens.is_empty()
+                        && this.p.is_waiting_on_list();
+                    if this.p.byte_cache.capacity() == 0 {
+                        this.p.byte_cache.reserve(bytes.len().max(512));
+                    }
+                    this.p.byte_cache.extend_from_slice(bytes);
+
+                    if was_waiting_on_list && !bytes.contains(&b')') {
+                        continue;
+                    }
+
+                    if let Err(e) = this.p.parse_stream_cache(false) {
+                        return Poll::Ready(Some(Err(e)));
+                    }
                 }
                 Poll::Ready(Some(Err(_err))) => {
                     this.p.status = ParsingStatus::Error;
                     return Poll::Ready(Some(Err(ParserError::InvalidToken("stream read error"))));
                 }
                 Poll::Ready(None) => {
-                    // Inner stream reached EOF
+                    // Inner stream reached EOF: parse any remaining buffered data with at_eof = true
+                    let all_complete = match this.p.parse_stream_cache(true) {
+                        Ok(done) => done,
+                        Err(e) => return Poll::Ready(Some(Err(e))),
+                    };
+
+                    if let Some(e) = this.p.pop_expr() {
+                        return Poll::Ready(Some(Ok(e)));
+                    }
+
                     // If parser is left in an incomplete state, that's an unexpected EOF
-                    if this.p.status.is_incomplete() {
+                    if !all_complete || this.p.status.is_incomplete() {
                         this.p.status = ParsingStatus::Error;
                         this.p.tokens.clear();
+                        this.p.byte_cache.clear();
                         return Poll::Ready(Some(Err(ParserError::InvalidToken(
                             "unexpected EOF in expression",
                         ))));
