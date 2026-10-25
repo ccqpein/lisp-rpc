@@ -41,7 +41,7 @@ where
     B: AsRef<[u8]>,
     E: std::fmt::Display,
 {
-    type Item = Result<Expr, ParserError>;
+    type Item = Result<Expr<'static>, ParserError>;
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let lower = self.p.exprs.len();

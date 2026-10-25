@@ -1,7 +1,7 @@
 //! Core tokenizer and parser for Lisp-RPC S-expressions.
 
 use anyhow::Result;
-use std::{collections::VecDeque, error::Error, io::Read};
+use std::{borrow::Cow, collections::VecDeque, error::Error, io::Read};
 
 pub mod stream_parser;
 pub use stream_parser::StreamParser;
@@ -162,18 +162,18 @@ impl std::ops::Add for TypeValueNumber {
 
 /// Primitive atom value types in Lisp-RPC expressions.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub enum TypeValue {
+pub enum TypeValue<'a> {
     /// Lisp symbol identifier.
-    Symbol(String),
-    /// String literal.
-    String(String),
-    /// Keyword identifier prefixed with a colon.
-    Keyword(String),
+    Symbol(Cow<'a, str>),
+    /// String literal (`Cow::Borrowed` when unescaped, `Cow::Owned` when unescaping was performed).
+    String(Cow<'a, str>),
+    /// Keyword identifier prefixed with a colon (without the leading colon).
+    Keyword(Cow<'a, str>),
     /// Numeric literal value.
     Number(TypeValueNumber),
 }
 
-impl TypeValue {
+impl<'a> TypeValue<'a> {
     /// Appends the formatted S-expression token directly into `buf`.
     #[inline]
     pub fn write_to(&self, buf: &mut String) {
@@ -195,7 +195,7 @@ impl TypeValue {
     /// Formats the type value as an S-expression token string.
     pub fn to_string(&self) -> String {
         match self {
-            TypeValue::Symbol(s) => s.clone(),
+            TypeValue::Symbol(s) => s.as_ref().to_string(),
             TypeValue::String(s) => {
                 let mut buf = String::with_capacity(s.len() + 2);
                 buf.push('"');
@@ -220,19 +220,20 @@ impl TypeValue {
     /// Extracts the unquoted string content if this is a [`TypeValue::String`].
     pub fn get_string(&self) -> Result<String> {
         match self {
-            TypeValue::String(s) => Ok(s.to_string()),
-            x @ _ => anyhow::bail!("{:?} isn't the String type that can get string", x),
+            TypeValue::String(s) => Ok(s.as_ref().to_string()),
+            x => anyhow::bail!("{:?} isn't the String type that can get string", x),
         }
     }
 
     /// Creates a [`TypeValue::Symbol`] if the string contains no whitespace.
-    pub fn make_symbol(s: &str) -> Result<Self> {
-        if s.contains([' ']) {
+    pub fn make_symbol(s: impl Into<Cow<'a, str>>) -> Result<Self> {
+        let cow: Cow<'a, str> = s.into();
+        if cow.contains([' ']) {
             Err(anyhow::anyhow!(ParserError::CorruptData(
                 "cannot make symbol with this str",
             )))
         } else {
-            Ok(Self::Symbol(s.to_string()))
+            Ok(Self::Symbol(cow))
         }
     }
 
@@ -251,34 +252,56 @@ impl TypeValue {
             _ => None,
         }
     }
+
+    /// Converts this borrowed value into an owned [`TypeValue<'static>`].
+    #[inline]
+    pub fn into_owned(self) -> TypeValue<'static> {
+        match self {
+            TypeValue::Symbol(s) => TypeValue::Symbol(Cow::Owned(s.into_owned())),
+            TypeValue::String(s) => TypeValue::String(Cow::Owned(s.into_owned())),
+            TypeValue::Keyword(s) => TypeValue::Keyword(Cow::Owned(s.into_owned())),
+            TypeValue::Number(n) => TypeValue::Number(n),
+        }
+    }
+
+    /// Clones this borrowed value into an owned [`TypeValue<'static>`].
+    #[inline]
+    pub fn to_owned_value(&self) -> TypeValue<'static> {
+        match self {
+            TypeValue::Symbol(s) => TypeValue::Symbol(Cow::Owned(s.as_ref().to_string())),
+            TypeValue::String(s) => TypeValue::String(Cow::Owned(s.as_ref().to_string())),
+            TypeValue::Keyword(s) => TypeValue::Keyword(Cow::Owned(s.as_ref().to_string())),
+            TypeValue::Number(n) => TypeValue::Number(*n),
+        }
+    }
 }
 
 /// An atomic value token in a Lisp S-expression.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct Atom {
+pub struct Atom<'a> {
     /// The inner typed value of the atom.
-    pub value: TypeValue,
+    pub value: TypeValue<'a>,
 }
 
-impl Atom {
+impl<'a> Atom<'a> {
     /// Creates an atom containing a symbol value.
-    pub fn read(s: &str) -> Self {
+    pub fn read(s: impl Into<Cow<'a, str>>) -> Self {
         Self {
-            value: TypeValue::Symbol(s.to_string()),
+            value: TypeValue::Symbol(s.into()),
         }
     }
 
     /// Creates an atom containing a string literal value.
-    pub fn read_string(s: &str) -> Self {
+    pub fn read_string(s: impl Into<Cow<'a, str>>) -> Self {
         Self {
-            value: TypeValue::String(s.to_string()),
+            value: TypeValue::String(s.into()),
         }
     }
 
     /// Creates an atom containing a keyword value.
-    pub fn read_keyword(s: &str) -> Self {
+    pub fn read_keyword(s: impl Into<Cow<'a, str>>) -> Self {
         Self {
-            value: TypeValue::Keyword(s.to_string()),
+            value: TypeValue::Keyword(s.into()),
         }
     }
 
@@ -291,10 +314,7 @@ impl Atom {
 
     /// Returns `true` if the atom contains a string value.
     pub fn is_string(&self) -> bool {
-        match self.value {
-            TypeValue::String(_) => true,
-            _ => false,
-        }
+        matches!(self.value, TypeValue::String(_))
     }
 
     /// Appends the formatted atom directly into `buf`.
@@ -307,23 +327,38 @@ impl Atom {
     pub fn to_string(&self) -> String {
         self.value.to_string()
     }
+
+    /// Converts this atom into an owned [`Atom<'static>`].
+    #[inline]
+    pub fn into_owned(self) -> Atom<'static> {
+        Atom {
+            value: self.value.into_owned(),
+        }
+    }
+
+    /// Clones this atom into an owned [`Atom<'static>`].
+    #[inline]
+    pub fn to_owned_atom(&self) -> Atom<'static> {
+        Atom {
+            value: self.value.to_owned_value(),
+        }
+    }
 }
 
 /// A parsed Lisp-RPC S-expression node.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Expr {
+pub enum Expr<'a> {
     /// Atomic value node.
-    Atom(Atom),
+    Atom(Atom<'a>),
     /// S-expression list node `(...)`.
-    List(Vec<Expr>),
+    List(Vec<Expr<'a>>),
     /// Quoted expression node `'...`.
-    Quote(Box<Expr>),
-
+    Quote(Box<Expr<'a>>),
     /// Comment node `;...`.
-    Comment(String),
+    Comment(Cow<'a, str>),
 }
 
-impl Expr {
+impl<'a> Expr<'a> {
     #[inline]
     fn estimated_len(&self) -> usize {
         match self {
@@ -383,7 +418,7 @@ impl Expr {
     }
 
     /// Returns an iterator over child expressions if this is an [`Expr::List`].
-    pub fn iter(&self) -> Option<impl Iterator<Item = &Expr>> {
+    pub fn iter(&self) -> Option<impl Iterator<Item = &Expr<'a>>> {
         match self {
             Expr::List(exprs) => Some(exprs.iter()),
             _ => None,
@@ -392,267 +427,48 @@ impl Expr {
 
     /// Returns `true` if this expression is an [`Expr::Comment`].
     pub fn is_comment(&self) -> bool {
-        match self {
-            Expr::Comment(_) => true,
-            _ => false,
-        }
+        matches!(self, Expr::Comment(_))
     }
 
     /// Returns an iterator yielding non-comment expressions from an [`Expr::List`].
-    pub fn filter_out_all_comments(&self) -> Result<impl Iterator<Item = &Expr>> {
+    pub fn filter_out_all_comments(&self) -> Result<impl Iterator<Item = &Expr<'a>>> {
         match self {
-            Expr::List(_) => match self.iter() {
-                Some(rest_expr) => Ok(rest_expr.filter(|e| !e.is_comment())),
-                None => Err(anyhow::anyhow!("Empty")),
-            },
+            Expr::List(exprs) => Ok(exprs.iter().filter(|e| !e.is_comment())),
             _ => Err(anyhow::anyhow!("Not the Expr::List")),
         }
     }
+
+    /// Converts this expression tree into an owned [`Expr<'static>`].
+    pub fn into_owned(self) -> Expr<'static> {
+        match self {
+            Expr::Atom(a) => Expr::Atom(a.into_owned()),
+            Expr::List(list) => Expr::List(list.into_iter().map(Expr::into_owned).collect()),
+            Expr::Quote(inner) => Expr::Quote(Box::new(inner.into_owned())),
+            Expr::Comment(c) => Expr::Comment(Cow::Owned(c.into_owned())),
+        }
+    }
+
+    /// Clones this expression tree into an owned [`Expr<'static>`].
+    pub fn to_owned_expr(&self) -> Expr<'static> {
+        match self {
+            Expr::Atom(a) => Expr::Atom(a.to_owned_atom()),
+            Expr::List(list) => Expr::List(list.iter().map(Expr::to_owned_expr).collect()),
+            Expr::Quote(inner) => Expr::Quote(Box::new(inner.to_owned_expr())),
+            Expr::Comment(c) => Expr::Comment(Cow::Owned(c.as_ref().to_string())),
+        }
+    }
 }
 
-impl std::fmt::Display for Expr {
+impl<'a> std::fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string())
     }
 }
 
-/// Zero-copy borrowed primitive atom value types in Lisp-RPC expressions.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub enum BorrowedTypeValue<'a> {
-    /// Borrowed Lisp symbol identifier slice.
-    Symbol(&'a str),
-    /// String literal (`Cow::Borrowed` when unescaped, `Cow::Owned` when unescaping is needed).
-    String(std::borrow::Cow<'a, str>),
-    /// Borrowed keyword identifier slice (without the leading colon).
-    Keyword(&'a str),
-    /// Numeric literal value.
-    Number(TypeValueNumber),
-}
-
-impl<'a> BorrowedTypeValue<'a> {
-    /// Converts this borrowed value into an owned [`TypeValue`].
-    #[inline]
-    pub fn into_owned(self) -> TypeValue {
-        match self {
-            BorrowedTypeValue::Symbol(s) => TypeValue::Symbol(s.to_string()),
-            BorrowedTypeValue::String(s) => TypeValue::String(s.into_owned()),
-            BorrowedTypeValue::Keyword(s) => TypeValue::Keyword(s.to_string()),
-            BorrowedTypeValue::Number(n) => TypeValue::Number(n),
-        }
-    }
-
-    /// Clones this borrowed value into an owned [`TypeValue`].
-    #[inline]
-    pub fn to_owned_value(&self) -> TypeValue {
-        match self {
-            BorrowedTypeValue::Symbol(s) => TypeValue::Symbol((*s).to_string()),
-            BorrowedTypeValue::String(s) => TypeValue::String(s.as_ref().to_string()),
-            BorrowedTypeValue::Keyword(s) => TypeValue::Keyword((*s).to_string()),
-            BorrowedTypeValue::Number(n) => TypeValue::Number(*n),
-        }
-    }
-
-    /// Appends the formatted S-expression token directly into `buf`.
-    #[inline]
-    pub fn write_to(&self, buf: &mut String) {
-        match self {
-            BorrowedTypeValue::Symbol(s) => buf.push_str(s),
-            BorrowedTypeValue::String(s) => {
-                buf.push('"');
-                buf.push_str(s);
-                buf.push('"');
-            }
-            BorrowedTypeValue::Keyword(s) => {
-                buf.push(':');
-                buf.push_str(s);
-            }
-            BorrowedTypeValue::Number(d) => d.write_to(buf),
-        }
-    }
-
-    /// Formats the borrowed value as an S-expression token string.
-    pub fn to_string(&self) -> String {
-        let mut buf = String::new();
-        self.write_to(&mut buf);
-        buf
-    }
-
-    /// Returns the integer value if this is a [`BorrowedTypeValue::Number`] containing an integer.
-    pub fn to_int(&self) -> Option<i64> {
-        match self {
-            BorrowedTypeValue::Number(n) => n.to_int(),
-            _ => None,
-        }
-    }
-
-    /// Returns the floating-point value if this is a [`BorrowedTypeValue::Number`].
-    pub fn to_float(&self) -> Option<f64> {
-        match self {
-            BorrowedTypeValue::Number(n) => n.to_float(),
-            _ => None,
-        }
-    }
-}
-
-/// A zero-copy borrowed atomic value token in a Lisp S-expression.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct BorrowedAtom<'a> {
-    /// The inner borrowed typed value of the atom.
-    pub value: BorrowedTypeValue<'a>,
-}
-
-impl<'a> BorrowedAtom<'a> {
-    /// Converts this borrowed atom into an owned [`Atom`].
-    #[inline]
-    pub fn into_owned(self) -> Atom {
-        Atom {
-            value: self.value.into_owned(),
-        }
-    }
-
-    /// Clones this borrowed atom into an owned [`Atom`].
-    #[inline]
-    pub fn to_owned_atom(&self) -> Atom {
-        Atom {
-            value: self.value.to_owned_value(),
-        }
-    }
-
-    /// Appends the formatted atom directly into `buf`.
-    #[inline]
-    pub fn write_to(&self, buf: &mut String) {
-        self.value.write_to(buf);
-    }
-
-    /// Formats the atom as an S-expression token string.
-    pub fn to_string(&self) -> String {
-        self.value.to_string()
-    }
-}
-
-/// A zero-copy parsed Lisp-RPC S-expression node borrowing directly from the input `&'a str`.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum BorrowedExpr<'a> {
-    /// Atomic value node.
-    Atom(BorrowedAtom<'a>),
-    /// S-expression list node `(...)`.
-    List(Vec<BorrowedExpr<'a>>),
-    /// Quoted expression node `'...`.
-    Quote(Box<BorrowedExpr<'a>>),
-    /// Comment node `;...`.
-    Comment(std::borrow::Cow<'a, str>),
-}
-
-impl<'a> BorrowedExpr<'a> {
-    /// Converts this borrowed expression tree into an owned [`Expr`].
-    pub fn into_owned(self) -> Expr {
-        match self {
-            BorrowedExpr::Atom(a) => Expr::Atom(a.into_owned()),
-            BorrowedExpr::List(list) => {
-                Expr::List(list.into_iter().map(BorrowedExpr::into_owned).collect())
-            }
-            BorrowedExpr::Quote(inner) => Expr::Quote(Box::new(inner.into_owned())),
-            BorrowedExpr::Comment(c) => Expr::Comment(c.into_owned()),
-        }
-    }
-
-    /// Clones this borrowed expression tree into an owned [`Expr`].
-    pub fn to_owned_expr(&self) -> Expr {
-        match self {
-            BorrowedExpr::Atom(a) => Expr::Atom(a.to_owned_atom()),
-            BorrowedExpr::List(list) => {
-                Expr::List(list.iter().map(BorrowedExpr::to_owned_expr).collect())
-            }
-            BorrowedExpr::Quote(inner) => Expr::Quote(Box::new(inner.to_owned_expr())),
-            BorrowedExpr::Comment(c) => Expr::Comment(c.as_ref().to_string()),
-        }
-    }
-
-    #[inline]
-    fn estimated_len(&self) -> usize {
-        match self {
-            BorrowedExpr::Atom(a) => match &a.value {
-                BorrowedTypeValue::Symbol(s) => s.len(),
-                BorrowedTypeValue::String(s) => s.len() + 2,
-                BorrowedTypeValue::Keyword(s) => s.len() + 1,
-                BorrowedTypeValue::Number(_) => 8,
-            },
-            BorrowedExpr::List(exprs) => {
-                2 + exprs.len().saturating_sub(1)
-                    + exprs.iter().map(BorrowedExpr::estimated_len).sum::<usize>()
-            }
-            BorrowedExpr::Quote(e) => 1 + e.estimated_len(),
-            BorrowedExpr::Comment(s) => 2 + s.len(),
-        }
-    }
-
-    /// Appends the formatted S-expression tree directly into `buf`.
-    pub fn write_to(&self, buf: &mut String) {
-        match self {
-            BorrowedExpr::Atom(atom) => atom.write_to(buf),
-            BorrowedExpr::List(exprs) => {
-                buf.push('(');
-                for (i, expr) in exprs.iter().enumerate() {
-                    if i > 0 {
-                        buf.push(' ');
-                    }
-                    expr.write_to(buf);
-                }
-                buf.push(')');
-            }
-            BorrowedExpr::Quote(expr) => {
-                buf.push('\'');
-                expr.write_to(buf);
-            }
-            BorrowedExpr::Comment(s) => {
-                buf.push_str("; ");
-                buf.push_str(s);
-            }
-        }
-    }
-
-    /// Formats the expression tree as an S-expression string.
-    pub fn to_string(&self) -> String {
-        let mut buf = String::with_capacity(self.estimated_len());
-        self.write_to(&mut buf);
-        buf
-    }
-
-    /// Returns a reference to the element at index `ind` if this is a [`BorrowedExpr::List`].
-    pub fn nth(&self, ind: usize) -> Option<&Self> {
-        match self {
-            BorrowedExpr::List(exprs) => exprs.get(ind),
-            _ => None,
-        }
-    }
-
-    /// Returns an iterator over child expressions if this is a [`BorrowedExpr::List`].
-    pub fn iter(&self) -> Option<impl Iterator<Item = &BorrowedExpr<'a>>> {
-        match self {
-            BorrowedExpr::List(exprs) => Some(exprs.iter()),
-            _ => None,
-        }
-    }
-
-    /// Returns `true` if this expression is a [`BorrowedExpr::Comment`].
-    pub fn is_comment(&self) -> bool {
-        matches!(self, BorrowedExpr::Comment(_))
-    }
-
-    /// Returns an iterator yielding non-comment expressions from a [`BorrowedExpr::List`].
-    pub fn filter_out_all_comments(&self) -> Result<impl Iterator<Item = &BorrowedExpr<'a>>> {
-        match self {
-            BorrowedExpr::List(exprs) => Ok(exprs.iter().filter(|e| !e.is_comment())),
-            _ => Err(anyhow::anyhow!("Not the BorrowedExpr::List")),
-        }
-    }
-}
-
-impl<'a> std::fmt::Display for BorrowedExpr<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
-    }
-}
+/// Owned type aliases for convenience.
+pub type TypeValueOwned = TypeValue<'static>;
+pub type AtomOwned = Atom<'static>;
+pub type ExprOwned = Expr<'static>;
 
 /// Represents the intermediate state of the parser when an input token stream
 /// ends before a full expression could be parsed.
@@ -764,7 +580,7 @@ pub enum ParsedExpr {
     Incomplete(ParsingStatus),
 
     /// The expression was successfully parsed into a complete [`Expr`].
-    Completed(Expr),
+    Completed(Expr<'static>),
 }
 
 impl ParsedExpr {
@@ -780,7 +596,7 @@ impl ParsedExpr {
 
     /// Converts this [`ParsedExpr`] into an `Option<Expr>`, returning `Some(Expr)`
     /// if completed, or `None` if incomplete.
-    pub fn into_expr(self) -> Option<Expr> {
+    pub fn into_expr(self) -> Option<Expr<'static>> {
         match self {
             ParsedExpr::Completed(expr) => Some(expr),
             ParsedExpr::Incomplete(_) => None,
@@ -807,7 +623,7 @@ pub struct Parser {
     pub status: ParsingStatus,
 
     /// Parsed expression nodes populated by [`parse`](Parser::parse).
-    pub exprs: VecDeque<Expr>,
+    pub exprs: VecDeque<Expr<'static>>,
 
     /// Unprocessed bytes buffered across chunk boundaries (e.g. split multi-byte UTF-8 sequences).
     byte_cache: Vec<u8>,
@@ -1178,7 +994,7 @@ impl Parser {
     fn restore_taken_from_exprs(
         tokens: &mut VecDeque<String>,
         range: std::ops::Range<usize>,
-        exprs: Vec<Expr>,
+        exprs: Vec<Expr<'static>>,
     ) {
         let mut idx = range.start;
         for expr in exprs {
@@ -1191,14 +1007,14 @@ impl Parser {
         tokens: &mut VecDeque<String>,
         idx: &mut usize,
         end: usize,
-        expr: Expr,
+        expr: Expr<'static>,
     ) {
         match expr {
             Expr::Atom(atom) => match atom.value {
                 TypeValue::Symbol(s) | TypeValue::Keyword(s) => {
                     while *idx < end {
                         if tokens[*idx].is_empty() {
-                            tokens[*idx] = s;
+                            tokens[*idx] = s.into_owned();
                             *idx += 1;
                             break;
                         }
@@ -1216,7 +1032,7 @@ impl Parser {
                     }
                     // If single-token string was moved via mem::take, restore it
                     if *idx < end && tokens[*idx].is_empty() {
-                        tokens[*idx] = s;
+                        tokens[*idx] = s.into_owned();
                         *idx += 1;
                     }
                     // Advance past closing quote
@@ -1273,23 +1089,32 @@ impl Parser {
         }
     }
 
-    /// Parses all S-expressions from `input` into zero-copy [`BorrowedExpr`] nodes without allocating token strings.
-    pub fn parse_borrowed<'a>(&self, input: &'a str) -> Result<Vec<BorrowedExpr<'a>>, ParserError> {
+    /// Parses all S-expressions from `input` into [`Expr<'a>`] nodes without allocating token strings.
+    pub fn parse_str_all<'a>(&self, input: &'a str) -> Result<Vec<Expr<'a>>, ParserError> {
         let mut sp = SliceParser::new(input, self.read_number_config, true);
         let mut out = Vec::with_capacity(4);
-        match sp.parse_all_borrowed(&mut out)? {
+        match sp.parse_all_exprs(&mut out)? {
             true => Ok(out),
             false => Err(ParserError::InvalidToken("unexpected EOF in expression")),
         }
     }
 
-    /// Parses the first non-whitespace S-expression from `input` into a zero-copy [`BorrowedExpr`].
-    pub fn parse_one_borrowed<'a>(
-        &self,
-        input: &'a str,
-    ) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
+    /// Parses the first non-whitespace S-expression from `input` into an [`Expr<'a>`].
+    pub fn parse_str_one<'a>(&self, input: &'a str) -> Result<Option<Expr<'a>>, ParserError> {
         let mut sp = SliceParser::new(input, self.read_number_config, true);
-        sp.parse_first_borrowed()
+        sp.parse_first_expr()
+    }
+
+    /// Alias for [`parse_str_all`].
+    #[inline]
+    pub fn parse_borrowed<'a>(&self, input: &'a str) -> Result<Vec<Expr<'a>>, ParserError> {
+        self.parse_str_all(input)
+    }
+
+    /// Alias for [`parse_str_one`].
+    #[inline]
+    pub fn parse_one_borrowed<'a>(&self, input: &'a str) -> Result<Option<Expr<'a>>, ParserError> {
+        self.parse_str_one(input)
     }
 
     #[inline]
@@ -1363,8 +1188,7 @@ impl Parser {
         }
 
         // SAFETY: self.byte_cache[..valid_up_to] was just validated as UTF-8
-        let valid_str =
-            unsafe { std::str::from_utf8_unchecked(&self.byte_cache[..valid_up_to]) };
+        let valid_str = unsafe { std::str::from_utf8_unchecked(&self.byte_cache[..valid_up_to]) };
         let mut sp = SliceParser::new(valid_str, self.read_number_config, at_eof);
         let res = sp.parse_all(&mut self.exprs);
         let committed = sp.committed_pos;
@@ -1540,7 +1364,7 @@ impl Parser {
         let token = std::mem::take(&mut self.tokens[*pos]);
         *pos += 1;
         Ok(ParsedExpr::Completed(Expr::Atom(Atom {
-            value: TypeValue::Symbol(token),
+            value: TypeValue::Symbol(Cow::Owned(token)),
         })))
     }
 
@@ -1675,7 +1499,7 @@ impl Parser {
         if self.tokens.get(*pos).map(|s| s.as_bytes()) == Some(b"\"") {
             *pos += 1;
             return Ok(ParsedExpr::Completed(Expr::Atom(Atom {
-                value: TypeValue::String(String::new()),
+                value: TypeValue::String(Cow::Borrowed("")),
             })));
         }
 
@@ -1686,7 +1510,7 @@ impl Parser {
             let s = std::mem::take(&mut self.tokens[*pos]);
             *pos += 2;
             return Ok(ParsedExpr::Completed(Expr::Atom(Atom {
-                value: TypeValue::String(s),
+                value: TypeValue::String(Cow::Owned(s)),
             })));
         }
 
@@ -1718,7 +1542,7 @@ impl Parser {
         }
 
         Ok(ParsedExpr::Completed(Expr::Atom(Atom {
-            value: TypeValue::String(res),
+            value: TypeValue::String(Cow::Owned(res)),
         })))
     }
 
@@ -1755,7 +1579,7 @@ impl Parser {
         *pos += 1;
 
         Ok(ParsedExpr::Completed(Expr::Atom(Atom {
-            value: TypeValue::Keyword(token),
+            value: TypeValue::Keyword(Cow::Owned(token)),
         })))
     }
 
@@ -1801,18 +1625,18 @@ impl Parser {
 
         let trimmed_len = res.trim_end().len();
         res.truncate(trimmed_len);
-        Ok(ParsedExpr::Completed(Expr::Comment(res)))
+        Ok(ParsedExpr::Completed(Expr::Comment(Cow::Owned(res))))
     }
 }
 
 impl Parser {
     /// Returns an iterator over all parsed expression nodes.
-    pub fn iter_expr(&self) -> impl Iterator<Item = &Expr> {
+    pub fn iter_expr(&self) -> impl Iterator<Item = &Expr<'static>> {
         self.exprs.iter()
     }
 
     /// Pops the front completed expression from the expression queue in FIFO order.
-    pub fn pop_expr(&mut self) -> Option<Expr> {
+    pub fn pop_expr(&mut self) -> Option<Expr<'static>> {
         self.exprs.pop_front()
     }
 }
@@ -1945,7 +1769,7 @@ impl<'a> SliceParser<'a> {
     }
 
     #[inline]
-    fn parse_all(&mut self, out: &mut VecDeque<Expr>) -> Result<bool, ParserError> {
+    fn parse_all(&mut self, out: &mut VecDeque<Expr<'static>>) -> Result<bool, ParserError> {
         let len = self.bytes.len();
         while self.pos < len {
             let b = self.bytes[self.pos];
@@ -1957,7 +1781,7 @@ impl<'a> SliceParser<'a> {
 
             match self.parse_expr()? {
                 Some(expr) => {
-                    out.push_back(expr);
+                    out.push_back(expr.into_owned());
                     self.committed_pos = self.pos;
                 }
                 None => {
@@ -1968,8 +1792,47 @@ impl<'a> SliceParser<'a> {
         Ok(true)
     }
 
+    #[inline]
+    fn parse_all_exprs(&mut self, out: &mut Vec<Expr<'a>>) -> Result<bool, ParserError> {
+        let len = self.bytes.len();
+        while self.pos < len {
+            let b = self.bytes[self.pos];
+            if b == b' ' || b == b'\n' {
+                self.pos += 1;
+                self.committed_pos = self.pos;
+                continue;
+            }
+
+            match self.parse_expr()? {
+                Some(expr) => {
+                    out.push(expr);
+                    self.committed_pos = self.pos;
+                }
+                None => {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    #[inline]
+    fn parse_first_expr(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
+        let len = self.bytes.len();
+        while self.pos < len {
+            let b = self.bytes[self.pos];
+            if b == b' ' || b == b'\n' {
+                self.pos += 1;
+                self.committed_pos = self.pos;
+                continue;
+            }
+            return self.parse_expr();
+        }
+        Ok(None)
+    }
+
     #[inline(always)]
-    fn parse_expr(&mut self) -> Result<Option<Expr>, ParserError> {
+    fn parse_expr(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         if self.pos >= self.bytes.len() {
             return Ok(None);
         }
@@ -1984,7 +1847,7 @@ impl<'a> SliceParser<'a> {
     }
 
     #[inline]
-    fn parse_list(&mut self) -> Result<Option<Expr>, ParserError> {
+    fn parse_list(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip '('
         let mut res = Vec::with_capacity(8);
         let len = self.bytes.len();
@@ -2008,7 +1871,7 @@ impl<'a> SliceParser<'a> {
     }
 
     #[inline]
-    fn parse_quote(&mut self) -> Result<Option<Expr>, ParserError> {
+    fn parse_quote(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip '\''
         match self.parse_expr()? {
             Some(inner) => Ok(Some(Expr::Quote(Box::new(inner)))),
@@ -2017,18 +1880,18 @@ impl<'a> SliceParser<'a> {
     }
 
     #[inline]
-    fn parse_keyword(&mut self) -> Result<Option<Expr>, ParserError> {
+    fn parse_keyword(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip ':'
         let Some(tok) = self.next_token() else {
             return Ok(None);
         };
         Ok(Some(Expr::Atom(Atom {
-            value: TypeValue::Keyword(tok.to_string()),
+            value: TypeValue::Keyword(Cow::Borrowed(tok)),
         })))
     }
 
     #[inline]
-    fn parse_string(&mut self) -> Result<Option<Expr>, ParserError> {
+    fn parse_string(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip opening '"'
         let start = self.pos;
         let bytes = self.bytes;
@@ -2044,7 +1907,7 @@ impl<'a> SliceParser<'a> {
                 // SAFETY: start and i are on ASCII `"` boundaries within valid UTF-8 self.s
                 let slice = unsafe { self.s.get_unchecked(start..i) };
                 return Ok(Some(Expr::Atom(Atom {
-                    value: TypeValue::String(slice.to_string()),
+                    value: TypeValue::String(Cow::Borrowed(slice)),
                 })));
             }
             if b == b'\\' || (b == b' ' && i + 1 < len && bytes[i + 1] == b' ') {
@@ -2088,12 +1951,12 @@ impl<'a> SliceParser<'a> {
         }
 
         Ok(Some(Expr::Atom(Atom {
-            value: TypeValue::String(res),
+            value: TypeValue::String(Cow::Owned(res)),
         })))
     }
 
     #[inline]
-    fn parse_comment(&mut self) -> Result<Option<Expr>, ParserError> {
+    fn parse_comment(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip ';'
         let bytes = self.bytes;
         let len = bytes.len();
@@ -2109,7 +1972,7 @@ impl<'a> SliceParser<'a> {
                 self.pos = i + 1;
                 // SAFETY: start and i are on ASCII boundaries within valid UTF-8 self.s
                 let slice = unsafe { self.s.get_unchecked(start..i) }.trim_end();
-                return Ok(Some(Expr::Comment(slice.to_string())));
+                return Ok(Some(Expr::Comment(Cow::Borrowed(slice))));
             }
             if b == b' ' && i + 1 < len && bytes[i + 1] == b' ' {
                 simple = false;
@@ -2121,7 +1984,7 @@ impl<'a> SliceParser<'a> {
             if self.at_eof {
                 self.pos = len;
                 let slice = unsafe { self.s.get_unchecked(start..len) }.trim_end();
-                return Ok(Some(Expr::Comment(slice.to_string())));
+                return Ok(Some(Expr::Comment(Cow::Borrowed(slice))));
             }
             return Ok(None);
         }
@@ -2152,11 +2015,11 @@ impl<'a> SliceParser<'a> {
 
         let trimmed_len = res.trim_end().len();
         res.truncate(trimmed_len);
-        Ok(Some(Expr::Comment(res)))
+        Ok(Some(Expr::Comment(Cow::Owned(res))))
     }
 
     #[inline]
-    fn parse_atom(&mut self) -> Result<Option<Expr>, ParserError> {
+    fn parse_atom(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         let Some(tok) = self.next_token() else {
             return Ok(None);
         };
@@ -2178,264 +2041,7 @@ impl<'a> SliceParser<'a> {
             }
         }
         Ok(Some(Expr::Atom(Atom {
-            value: TypeValue::Symbol(tok.to_string()),
-        })))
-    }
-
-    #[inline]
-    fn parse_all_borrowed(
-        &mut self,
-        out: &mut Vec<BorrowedExpr<'a>>,
-    ) -> Result<bool, ParserError> {
-        let len = self.bytes.len();
-        while self.pos < len {
-            let b = self.bytes[self.pos];
-            if b == b' ' || b == b'\n' {
-                self.pos += 1;
-                self.committed_pos = self.pos;
-                continue;
-            }
-
-            match self.parse_expr_borrowed()? {
-                Some(expr) => {
-                    out.push(expr);
-                    self.committed_pos = self.pos;
-                }
-                None => {
-                    return Ok(false);
-                }
-            }
-        }
-        Ok(true)
-    }
-
-    #[inline]
-    fn parse_first_borrowed(&mut self) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
-        let len = self.bytes.len();
-        while self.pos < len {
-            let b = self.bytes[self.pos];
-            if b == b' ' || b == b'\n' {
-                self.pos += 1;
-                self.committed_pos = self.pos;
-                continue;
-            }
-            return self.parse_expr_borrowed();
-        }
-        Ok(None)
-    }
-
-    #[inline(always)]
-    fn parse_expr_borrowed(&mut self) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
-        if self.pos >= self.bytes.len() {
-            return Ok(None);
-        }
-        match self.bytes[self.pos] {
-            b'(' => self.parse_list_borrowed(),
-            b'\'' => self.parse_quote_borrowed(),
-            b'"' => self.parse_string_borrowed(),
-            b':' => self.parse_keyword_borrowed(),
-            b';' => self.parse_comment_borrowed(),
-            _ => self.parse_atom_borrowed(),
-        }
-    }
-
-    #[inline]
-    fn parse_list_borrowed(&mut self) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
-        self.pos += 1; // skip '('
-        let mut res = Vec::with_capacity(8);
-        let len = self.bytes.len();
-
-        while self.pos < len {
-            let b = self.bytes[self.pos];
-            if b == b')' {
-                self.pos += 1;
-                return Ok(Some(BorrowedExpr::List(res)));
-            }
-            if b == b' ' || b == b'\n' {
-                self.pos += 1;
-                continue;
-            }
-            match self.parse_expr_borrowed()? {
-                Some(expr) => res.push(expr),
-                None => return Ok(None),
-            }
-        }
-        Ok(None)
-    }
-
-    #[inline]
-    fn parse_quote_borrowed(&mut self) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
-        self.pos += 1; // skip '\''
-        match self.parse_expr_borrowed()? {
-            Some(inner) => Ok(Some(BorrowedExpr::Quote(Box::new(inner)))),
-            None => Ok(None),
-        }
-    }
-
-    #[inline]
-    fn parse_keyword_borrowed(&mut self) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
-        self.pos += 1; // skip ':'
-        let Some(tok) = self.next_token() else {
-            return Ok(None);
-        };
-        Ok(Some(BorrowedExpr::Atom(BorrowedAtom {
-            value: BorrowedTypeValue::Keyword(tok),
-        })))
-    }
-
-    #[inline]
-    fn parse_string_borrowed(&mut self) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
-        self.pos += 1; // skip opening '"'
-        let start = self.pos;
-        let bytes = self.bytes;
-        let len = bytes.len();
-
-        let mut i = start;
-        let mut simple = true;
-        while i < len {
-            let b = bytes[i];
-            if b == b'"' {
-                self.pos = i + 1;
-                // SAFETY: start and i are on ASCII `"` boundaries within valid UTF-8 self.s
-                let slice = unsafe { self.s.get_unchecked(start..i) };
-                return Ok(Some(BorrowedExpr::Atom(BorrowedAtom {
-                    value: BorrowedTypeValue::String(std::borrow::Cow::Borrowed(slice)),
-                })));
-            }
-            if b == b'\\' || (b == b' ' && i + 1 < len && bytes[i + 1] == b' ') {
-                simple = false;
-                break;
-            }
-            i += 1;
-        }
-        if simple {
-            return Ok(None);
-        }
-
-        let Some(first_tok) = self.next_token() else {
-            return Ok(None);
-        };
-        let first_b = first_tok.as_bytes();
-        let mut escape = first_b == b"\\";
-        let mut res = String::with_capacity(32);
-        if !escape {
-            res.push_str(first_tok);
-        }
-
-        loop {
-            let Some(tok) = self.next_token() else {
-                return Ok(None);
-            };
-            if escape {
-                res.push_str(tok);
-                escape = false;
-                continue;
-            }
-            let b = tok.as_bytes();
-            if b == b"\"" {
-                break;
-            } else if b == b"\\" {
-                escape = true;
-            } else {
-                res.push_str(tok);
-            }
-        }
-
-        Ok(Some(BorrowedExpr::Atom(BorrowedAtom {
-            value: BorrowedTypeValue::String(std::borrow::Cow::Owned(res)),
-        })))
-    }
-
-    #[inline]
-    fn parse_comment_borrowed(&mut self) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
-        self.pos += 1; // skip ';'
-        let bytes = self.bytes;
-        let len = bytes.len();
-        let mut i = self.pos;
-        while i < len && (bytes[i] == b';' || bytes[i] == b' ') {
-            i += 1;
-        }
-        let start = i;
-        let mut simple = true;
-        while i < len {
-            let b = bytes[i];
-            if b == b'\n' {
-                self.pos = i + 1;
-                let slice = unsafe { self.s.get_unchecked(start..i) }.trim_end();
-                return Ok(Some(BorrowedExpr::Comment(std::borrow::Cow::Borrowed(
-                    slice,
-                ))));
-            }
-            if b == b' ' && i + 1 < len && bytes[i + 1] == b' ' {
-                simple = false;
-                break;
-            }
-            i += 1;
-        }
-        if simple {
-            if self.at_eof {
-                self.pos = len;
-                let slice = unsafe { self.s.get_unchecked(start..len) }.trim_end();
-                return Ok(Some(BorrowedExpr::Comment(std::borrow::Cow::Borrowed(
-                    slice,
-                ))));
-            }
-            return Ok(None);
-        }
-
-        let mut start_tok = false;
-        let mut res = String::with_capacity(64);
-
-        loop {
-            let Some(tok) = self.next_token() else {
-                if self.at_eof {
-                    break;
-                } else {
-                    return Ok(None);
-                }
-            };
-            let b = tok.as_bytes();
-            if !start_tok {
-                if b == b";" || b == b" " {
-                    continue;
-                }
-                start_tok = true;
-            }
-            if b == b"\n" {
-                break;
-            }
-            res.push_str(tok);
-        }
-
-        let trimmed_len = res.trim_end().len();
-        res.truncate(trimmed_len);
-        Ok(Some(BorrowedExpr::Comment(std::borrow::Cow::Owned(res))))
-    }
-
-    #[inline]
-    fn parse_atom_borrowed(&mut self) -> Result<Option<BorrowedExpr<'a>>, ParserError> {
-        let Some(tok) = self.next_token() else {
-            return Ok(None);
-        };
-        if self.read_number {
-            let bytes = tok.as_bytes();
-            if let Some(&first) = bytes.first() {
-                if first.is_ascii_digit() || first == b'-' || first == b'+' || first == b'.' {
-                    if let Ok(n) = tok.parse::<i64>() {
-                        return Ok(Some(BorrowedExpr::Atom(BorrowedAtom {
-                            value: BorrowedTypeValue::Number(TypeValueNumber::Int(n)),
-                        })));
-                    }
-                    if let Ok(f) = tok.parse::<f64>() {
-                        return Ok(Some(BorrowedExpr::Atom(BorrowedAtom {
-                            value: BorrowedTypeValue::Number(TypeValueNumber::Float(f)),
-                        })));
-                    }
-                }
-            }
-        }
-        Ok(Some(BorrowedExpr::Atom(BorrowedAtom {
-            value: BorrowedTypeValue::Symbol(tok),
+            value: TypeValue::Symbol(Cow::Borrowed(tok)),
         })))
     }
 }

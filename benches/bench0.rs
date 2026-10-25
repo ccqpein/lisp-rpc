@@ -100,14 +100,14 @@ fn bench_parse_str_realistic(c: &mut Criterion) {
 fn bench_parse_borrowed_small(c: &mut Criterion) {
     let parser = Parser::new();
     c.bench_function("bench_parse_borrowed_small", |b| {
-        b.iter(|| black_box(parser.parse_one_borrowed(black_box(SMALL_RPC)).unwrap()))
+        b.iter(|| black_box(parser.parse_str_one(black_box(SMALL_RPC)).unwrap()))
     });
 }
 
 fn bench_parse_borrowed_realistic(c: &mut Criterion) {
     let parser = Parser::new();
     c.bench_function("bench_parse_borrowed_realistic", |b| {
-        b.iter(|| black_box(parser.parse_one_borrowed(black_box(REALISTIC_RPC)).unwrap()))
+        b.iter(|| black_box(parser.parse_str_one(black_box(REALISTIC_RPC)).unwrap()))
     });
 }
 

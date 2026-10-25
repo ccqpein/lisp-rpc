@@ -8,14 +8,12 @@ mod macros;
 pub mod raw_data_generator;
 pub use raw_data_generator::RawDataGenerator;
 
-use std::{cell::OnceCell, collections::HashMap, error::Error};
+use std::{borrow::Cow, cell::OnceCell, collections::HashMap, error::Error};
 
 use anyhow::{Context, Result, anyhow};
 use tracing::error;
 
-use lisp_rpc_rust_parser::{
-    Atom, BorrowedAtom, BorrowedExpr, BorrowedTypeValue, Expr, Parser, TypeValue, TypeValueNumber,
-};
+use lisp_rpc_rust_parser::{Atom, Expr, Parser, TypeValue, TypeValueNumber};
 
 /// The category of a [`DataError`].
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -40,39 +38,40 @@ impl std::fmt::Display for DataError {
 impl Error for DataError {}
 
 /// Trait for constructing a data structure from a parsed Lisp [`Expr`].
-pub trait FromExpr {
+pub trait FromExpr<'a> {
     /// Converts a reference to an [`Expr`] into `Self`.
-    fn from_expr(expr: &Expr) -> Result<Self>
+    fn from_expr(expr: &Expr<'a>) -> Result<Self>
     where
         Self: Sized;
 
-    /// Converts a zero-copy [`BorrowedExpr`] into `Self`.
-    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
+    /// Converts an [`Expr`] into `Self`.
+    #[inline]
+    fn from_borrowed_expr(expr: Expr<'a>) -> Result<Self>
     where
         Self: Sized,
     {
-        Self::from_expr(&expr.into_owned())
+        Self::from_expr(&expr)
     }
 }
 
 /// Trait for tokenizing and parsing a data structure directly from a string slice.
-pub trait FromStr: FromExpr {
+pub trait FromStr<'a>: FromExpr<'a> {
     /// Parses `Self` from a string slice using the provided [`Parser`].
-    fn from_str(p: &mut Parser, s: &str) -> Result<Self>
+    fn from_str(p: &mut Parser, s: &'a str) -> Result<Self>
     where
         Self: Sized,
     {
         let expr = p
-            .parse_one_borrowed(s)?
+            .parse_str_one(s)?
             .context("Cannot get the last expr")?;
-        Self::from_borrowed_expr(expr)
+        Self::from_expr(&expr)
     }
 }
 
 /// Trait for converting a value into dynamic Lisp-RPC [`Data`].
 pub trait IntoData {
     /// Converts `self` into a [`Data`] representation.
-    fn into_rpc_data(&self) -> Data;
+    fn into_rpc_data(&self) -> Data<'static>;
 }
 
 // impl the into data for several type
@@ -82,14 +81,14 @@ impl_into_data_for_numbers_int!(i8, i16, i32, i64);
 impl_into_data_for_numbers_float!(f32, f64);
 
 /// Trait for data structures that support key-based field lookups.
-pub trait GetAbleData {
+pub trait GetAbleData<'a> {
     /// Retrieves a reference to the [`Data`] field matching the given key name.
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data>;
+    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>>;
 }
 
 /// Returns `true` if the given expression is a symbol representing `nil`.
 #[inline]
-pub fn is_nil_symbol(e: &Expr) -> bool {
+pub fn is_nil_symbol(e: &Expr<'_>) -> bool {
     match e {
         Expr::Atom(a) => match &a.value {
             TypeValue::Symbol(s) => s.eq_ignore_ascii_case("nil"),
@@ -99,20 +98,9 @@ pub fn is_nil_symbol(e: &Expr) -> bool {
     }
 }
 
-#[inline]
-fn is_nil_borrowed_symbol(e: &BorrowedExpr<'_>) -> bool {
-    match e {
-        BorrowedExpr::Atom(a) => match &a.value {
-            BorrowedTypeValue::Symbol(s) => s.eq_ignore_ascii_case("nil"),
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
 /// Returns `true` if the given expression is a symbol representing `t`.
 #[inline]
-pub fn is_t_symbol(e: &Expr) -> bool {
+pub fn is_t_symbol(e: &Expr<'_>) -> bool {
     match e {
         Expr::Atom(a) => match &a.value {
             TypeValue::Symbol(s) => s.eq_ignore_ascii_case("t"),
@@ -123,41 +111,40 @@ pub fn is_t_symbol(e: &Expr) -> bool {
 }
 
 /// Type alias for [`TypeValue`].
-pub type Value = TypeValue;
+pub type Value<'a> = TypeValue<'a>;
 
 /// Core enum representing dynamic Lisp-RPC data, lists, maps, and primitive values.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Data {
+pub enum Data<'a> {
     /// Named S-expression data structure `(name :key value ...)`.
-    Data(ExprData),
+    Data(ExprData<'a>),
 
     /// Quoted sequence `'("a" "b" 1)`.
-    List(ListData),
+    List(ListData<'a>),
 
     /// Quoted key-value map `'(:a 1 :b 2)`.
-    Map(MapData),
+    Map(MapData<'a>),
 
     /// Primitive atom value (symbol, string, keyword, or number).
-    Value(Value),
+    Value(TypeValue<'a>),
 
     /// Error encountered during data operations.
     Error(DataError),
 }
 
-impl Data {
-    /// Converts an [`Expr`] into a [`Data`] instance.
-    pub fn from_expr(e: &Expr) -> Result<Self> {
+impl<'a> Data<'a> {
+    /// Converts an [`Expr`] reference into a [`Data`] instance.
+    pub fn from_expr(e: &Expr<'a>) -> Result<Self> {
         match e {
             Expr::List(_) => Ok(Self::Data(ExprData::from_expr(e)?)),
             Expr::Quote(expr) => {
-                // list or map
                 match expr.as_ref() {
                     Expr::List(list) => {
                         let first = list.iter().find(|item| !item.is_comment());
                         match first {
                             // Map data
                             Some(Expr::Atom(Atom {
-                                value: crate::TypeValue::Keyword(_),
+                                value: TypeValue::Keyword(_),
                                 ..
                             })) => Ok(Self::Map(MapData::from_expr(e)?)),
 
@@ -193,7 +180,7 @@ impl Data {
                         err_type: DataErrorType::InvalidInput,
                     }))
                 }
-                vv @ _ => Ok(Self::Value(vv.clone())),
+                vv => Ok(Self::Value(vv.clone())),
             },
 
             Expr::Comment(_) => Err(anyhow!(DataError {
@@ -203,60 +190,43 @@ impl Data {
         }
     }
 
-    /// Converts a zero-copy [`BorrowedExpr`] into a [`Data`] instance without intermediate AST cloning.
-    pub fn from_borrowed_expr(e: BorrowedExpr<'_>) -> Result<Self> {
-        match e {
-            BorrowedExpr::List(_) => Ok(Self::Data(ExprData::from_borrowed_expr(e)?)),
-            BorrowedExpr::Quote(expr) => match *expr {
-                BorrowedExpr::List(ref list) => {
-                    let first = list.iter().find(|item| !item.is_comment());
-                    match first {
-                        Some(BorrowedExpr::Atom(BorrowedAtom {
-                            value: BorrowedTypeValue::Keyword(_),
-                        })) => Ok(Self::Map(MapData::from_borrowed_list(*expr)?)),
-                        Some(
-                            BorrowedExpr::Atom(_)
-                            | BorrowedExpr::List(_)
-                            | BorrowedExpr::Quote(_),
-                        ) => Ok(Self::List(ListData::from_borrowed_list(*expr)?)),
-                        _ => Err(anyhow!(DataError {
-                            msg: format!("cannot generate Data from the expr {:?}", expr),
-                            err_type: DataErrorType::InvalidInput,
-                        })),
-                    }
-                }
-                BorrowedExpr::Atom(a) => Ok(Self::Value(a.value.into_owned())),
-                other => Err(anyhow!(DataError {
-                    msg: format!("cannot generate Data from the expr {:?}", other),
-                    err_type: DataErrorType::InvalidInput,
-                })),
-            },
-            BorrowedExpr::Atom(a) => match &a.value {
-                BorrowedTypeValue::Symbol(x) if x.eq_ignore_ascii_case("t") => {
-                    Ok(Self::Value(a.value.into_owned()))
-                }
-                BorrowedTypeValue::Symbol(_) => {
-                    error!("this symbol cannot be data");
-                    Err(anyhow!(DataError {
-                        msg: format!("cannot generate Data from the symbol {:?}", a),
-                        err_type: DataErrorType::InvalidInput,
-                    }))
-                }
-                _ => Ok(Self::Value(a.value.into_owned())),
-            },
-            BorrowedExpr::Comment(_) => Err(anyhow!(DataError {
-                msg: "cannot generate Data from the comment".to_string(),
-                err_type: DataErrorType::InvalidInput,
-            })),
-        }
+    /// Converts an [`Expr`] into a [`Data`] instance.
+    #[inline]
+    pub fn from_borrowed_expr(e: Expr<'a>) -> Result<Self> {
+        Self::from_expr(&e)
     }
 
-    pub fn from_exprs<'a>(es: impl Iterator<Item = &'a Expr>) -> Result<Vec<Self>> {
+    pub fn from_exprs<'b>(es: impl Iterator<Item = &'b Expr<'a>>) -> Result<Vec<Self>>
+    where
+        'a: 'b,
+    {
         let mut res = vec![];
         for e in es {
             res.push(Self::from_expr(e)?)
         }
         Ok(res)
+    }
+
+    /// Converts this dynamic data structure into a `'static` owned variant.
+    pub fn into_owned(self) -> Data<'static> {
+        match self {
+            Data::Data(d) => Data::Data(d.into_owned()),
+            Data::List(l) => Data::List(l.into_owned()),
+            Data::Map(m) => Data::Map(m.into_owned()),
+            Data::Value(v) => Data::Value(v.into_owned()),
+            Data::Error(e) => Data::Error(e),
+        }
+    }
+
+    /// Converts this dynamic data structure reference into a `'static` owned variant.
+    pub fn to_owned_data(&self) -> Data<'static> {
+        match self {
+            Data::Data(d) => Data::Data(d.to_owned_data()),
+            Data::List(l) => Data::List(l.to_owned_data()),
+            Data::Map(m) => Data::Map(m.to_owned_data()),
+            Data::Value(v) => Data::Value(v.to_owned_value()),
+            Data::Error(e) => Data::Error(e.clone()),
+        }
     }
 
     #[inline]
@@ -300,33 +270,19 @@ impl Data {
     pub fn get_string(&self) -> Result<String> {
         match self {
             Data::Value(type_value) => type_value.get_string(),
-            x @ _ => anyhow::bail!("{:?} isn't the Data::Value type that can get string", x),
+            x => anyhow::bail!("{:?} isn't the Data::Value type that can get string", x),
         }
     }
 
-    /// Constructs a new root named data expression from a name and key-value pairs.
-    pub fn new<'a>(
-        name: &str,
-        kv_pairs: impl Iterator<Item = (&'a str, &'a dyn IntoData)>,
-    ) -> Result<Self> {
-        Ok(Data::Data(ExprData::new(
-            name,
-            kv_pairs.map(|(s, x)| {
-                (
-                    Expr::Atom(Atom {
-                        value: TypeValue::Keyword(s.to_string()),
-                    }),
-                    x.into_rpc_data(),
-                )
-            }),
-        )?))
-    }
-
     /// Parses a root named data expression from a string slice.
-    pub fn from_root_str(s: &str, parser: Option<&mut Parser>) -> Result<Self> {
+    pub fn from_root_str(s: &'a str, parser: Option<&mut Parser>) -> Result<Self> {
+        let mut default_parser;
         let p = match parser {
             Some(p) => p,
-            None => &mut Default::default(),
+            None => {
+                default_parser = Default::default();
+                &mut default_parser
+            }
         };
 
         match Self::from_str(p, s) {
@@ -343,7 +299,7 @@ impl Data {
     }
 
     /// Returns a reference to the inner [`TypeValue`] if this is a [`Data::Value`].
-    pub fn as_value(&self) -> Option<&TypeValue> {
+    pub fn as_value(&self) -> Option<&TypeValue<'a>> {
         match self {
             Data::Value(type_value) => Some(type_value),
             _ => None,
@@ -352,67 +308,85 @@ impl Data {
 
     /// Returns the integer value if this is a [`Data::Value`] containing an integer.
     pub fn to_int(&self) -> Option<i64> {
-        self.as_value().map_or(None, |tv| tv.to_int())
+        self.as_value().and_then(|tv| tv.to_int())
     }
 
     /// Returns the floating-point value if this is a [`Data::Value`] containing a number.
     pub fn to_float(&self) -> Option<f64> {
-        self.as_value().map_or(None, |tv| tv.to_float())
-    }
-}
-
-impl FromExpr for Data {
-    fn from_expr(expr: &Expr) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        Self::from_expr(expr)
+        self.as_value().and_then(|tv| tv.to_float())
     }
 
-    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        Self::from_borrowed_expr(expr)
-    }
-}
-
-impl FromStr for Data {}
-
-impl std::fmt::Display for Data {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
-    }
-}
-
-impl IntoData for Data {
-    fn into_rpc_data(&self) -> Data {
-        self.clone()
-    }
-}
-
-impl GetAbleData for Data {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data> {
+    /// Retrieves a field value by its keyword name.
+    pub fn get(&self, k: &str) -> Option<&Data<'a>> {
         match self {
-            Data::Data(expr_data) => <ExprData as GetAbleData>::get(expr_data, k),
-            Data::Map(map_data) => <MapData as GetAbleData>::get(map_data, k),
+            Data::Data(expr_data) => expr_data.get(k),
+            Data::Map(map_data) => map_data.get(k),
             _ => None,
         }
     }
 }
 
-/// Named S-expression data structure containing key-value argument pairs.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ExprData {
-    name: String,
-    /// The keyword-value argument pairs of the data expression.
-    pub rest_args: Vec<(Expr, Data)>,
-    inner_map: OnceCell<DataMap>,
+impl Data<'static> {
+    /// Constructs a new root named data expression from a name and key-value pairs.
+    pub fn new<'k>(
+        name: &str,
+        kv_pairs: impl Iterator<Item = (&'k str, &'k dyn IntoData)>,
+    ) -> Result<Self> {
+        Ok(Data::Data(ExprData::new(
+            name.to_string(),
+            kv_pairs.map(|(s, x)| {
+                (
+                    Expr::Atom(Atom {
+                        value: TypeValue::Keyword(Cow::Owned(s.to_string())),
+                    }),
+                    x.into_rpc_data(),
+                )
+            }),
+        )?))
+    }
 }
 
-impl ExprData {
+impl<'a> FromExpr<'a> for Data<'a> {
+    fn from_expr(expr: &Expr<'a>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::from_expr(expr)
+    }
+}
+
+impl<'a> FromStr<'a> for Data<'a> {}
+
+impl<'a> std::fmt::Display for Data<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl<'a> IntoData for Data<'a> {
+    fn into_rpc_data(&self) -> Data<'static> {
+        self.to_owned_data()
+    }
+}
+
+impl<'a> GetAbleData<'a> for Data<'a> {
+    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
+        self.get(k)
+    }
+}
+
+/// Named S-expression data structure containing key-value argument pairs.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ExprData<'a> {
+    name: Cow<'a, str>,
+    /// The keyword-value argument pairs of the data expression.
+    pub rest_args: Vec<(Expr<'a>, Data<'a>)>,
+    inner_map: OnceCell<DataMap<'a>>,
+}
+
+impl<'a> ExprData<'a> {
     /// Parses an [`ExprData`] from a list [`Expr`].
-    pub fn from_expr(expr: &Expr) -> Result<Self> {
+    pub fn from_expr(expr: &Expr<'a>) -> Result<Self> {
         let Expr::List(list) = expr else {
             return Err(anyhow!(DataError {
                 msg: "Not the Expr::List".to_string(),
@@ -439,8 +413,8 @@ impl ExprData {
             }
             let name = match &list[0] {
                 Expr::Atom(Atom {
-                    value: crate::TypeValue::Symbol(s),
-                }) => s,
+                    value: TypeValue::Symbol(s),
+                }) => s.clone(),
                 _ => {
                     return Err(anyhow!(DataError {
                         msg: "data's first element has to be symbol".to_string(),
@@ -448,11 +422,12 @@ impl ExprData {
                     }));
                 }
             };
+
             let mut rest_a = Vec::with_capacity((list.len() - 1) / 2);
             for [k, v] in list[1..].iter().array_chunks() {
                 match k {
                     Expr::Atom(Atom {
-                        value: crate::TypeValue::Keyword(_),
+                        value: TypeValue::Keyword(_),
                     }) => {
                         if !is_nil_symbol(v) {
                             rest_a.push((k.clone(), Data::from_expr(v)?));
@@ -467,7 +442,7 @@ impl ExprData {
                 }
             }
             return Ok(Self {
-                name: name.to_string(),
+                name,
                 rest_args: rest_a,
                 inner_map: OnceCell::new(),
             });
@@ -494,8 +469,8 @@ impl ExprData {
 
         let name = match &exprs[0] {
             Expr::Atom(Atom {
-                value: crate::TypeValue::Symbol(s),
-            }) => s,
+                value: TypeValue::Symbol(s),
+            }) => s.clone(),
             _ => {
                 return Err(anyhow!(DataError {
                     msg: "data's first element has to be symbol".to_string(),
@@ -509,7 +484,7 @@ impl ExprData {
             match (k, v) {
                 (
                     Expr::Atom(Atom {
-                        value: crate::TypeValue::Keyword(_),
+                        value: TypeValue::Keyword(_),
                     }),
                     _,
                 ) => {
@@ -527,101 +502,56 @@ impl ExprData {
         }
 
         Ok(Self {
-            name: name.to_string(),
+            name,
             rest_args: rest_a,
             inner_map: OnceCell::new(), // generate when get method called
         })
     }
 
-    /// Parses an [`ExprData`] from a zero-copy [`BorrowedExpr`].
-    pub fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self> {
-        let BorrowedExpr::List(mut list) = expr else {
-            return Err(anyhow!(DataError {
-                msg: "Not the Expr::List".to_string(),
-                err_type: DataErrorType::InvalidInput,
-            }));
-        };
+    /// Parses an [`ExprData`] from an [`Expr`].
+    #[inline]
+    pub fn from_borrowed_expr(expr: Expr<'a>) -> Result<Self> {
+        Self::from_expr(&expr)
+    }
 
-        if list.iter().any(BorrowedExpr::is_comment) {
-            list.retain(|e| !e.is_comment());
-        }
-
-        if list.is_empty() {
-            return Err(anyhow!(DataError {
-                msg: "empty data".to_string(),
-                err_type: DataErrorType::InvalidInput,
-            }));
-        }
-
-        if list.len() % 2 != 1 {
-            let tmp = BorrowedExpr::List(list);
-            return Err(anyhow!(DataError {
-                msg: format!(
-                    "rest data from {}... has to be odd length elements",
-                    tmp.to_string().get(0..10).unwrap_or("")
-                ),
-                err_type: DataErrorType::InvalidInput,
-            }));
-        }
-
-        let mut iter = list.into_iter();
-        let name = match iter.next() {
-            Some(BorrowedExpr::Atom(BorrowedAtom {
-                value: BorrowedTypeValue::Symbol(s),
-            })) => s.to_string(),
-            _ => {
-                return Err(anyhow!(DataError {
-                    msg: "data's first element has to be symbol".to_string(),
-                    err_type: DataErrorType::InvalidInput,
-                }));
-            }
-        };
-
-        let mut rest_a = Vec::with_capacity(iter.len() / 2);
-        while let Some(k) = iter.next() {
-            let Some(v) = iter.next() else {
-                return Err(anyhow!(DataError {
-                    msg: "has to be keyword value pairs".to_string(),
-                    err_type: DataErrorType::InvalidInput,
-                }));
-            };
-            match k {
-                BorrowedExpr::Atom(BorrowedAtom {
-                    value: BorrowedTypeValue::Keyword(kw),
-                }) => {
-                    if !is_nil_borrowed_symbol(&v) {
-                        rest_a.push((
-                            Expr::Atom(Atom {
-                                value: TypeValue::Keyword(kw.to_string()),
-                            }),
-                            Data::from_borrowed_expr(v)?,
-                        ));
-                    }
-                }
-                _ => {
-                    return Err(anyhow!(DataError {
-                        msg: "has to be keyword value pairs".to_string(),
-                        err_type: DataErrorType::InvalidInput,
-                    }));
-                }
-            }
-        }
-
+    /// Creates a new [`ExprData`] with the given name and argument pairs.
+    pub fn new(
+        name: impl Into<Cow<'a, str>>,
+        rest_args: impl Iterator<Item = (Expr<'a>, Data<'a>)>,
+    ) -> Result<Self> {
+        let name = name.into();
+        let _ = TypeValue::make_symbol(&*name)?;
         Ok(Self {
             name,
-            rest_args: rest_a,
+            rest_args: rest_args.collect(),
             inner_map: OnceCell::new(),
         })
     }
 
-    /// Creates a new [`ExprData`] with the given name and argument pairs.
-    pub fn new<'a>(name: &str, rest_args: impl Iterator<Item = (Expr, Data)>) -> Result<Self> {
-        let _ = TypeValue::make_symbol(name)?;
-        Ok(Self {
-            name: name.to_string(),
-            rest_args: rest_args.collect(),
+    /// Converts this data expression into a `'static` owned variant.
+    pub fn into_owned(self) -> ExprData<'static> {
+        ExprData {
+            name: Cow::Owned(self.name.into_owned()),
+            rest_args: self
+                .rest_args
+                .into_iter()
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect(),
             inner_map: OnceCell::new(),
-        })
+        }
+    }
+
+    /// Converts this data expression reference into a `'static` owned variant.
+    pub fn to_owned_data(&self) -> ExprData<'static> {
+        ExprData {
+            name: Cow::Owned(self.name.to_string()),
+            rest_args: self
+                .rest_args
+                .iter()
+                .map(|(k, v)| (k.to_owned_expr(), v.to_owned_data()))
+                .collect(),
+            inner_map: OnceCell::new(),
+        }
     }
 
     /// Returns the symbol name of the data expression.
@@ -674,7 +604,7 @@ impl ExprData {
     }
 
     /// Retrieves a field value by its keyword name.
-    pub fn get(&self, k: &str) -> Option<&Data> {
+    pub fn get(&self, k: &str) -> Option<&Data<'a>> {
         let m = self
             .inner_map
             .get_or_init(|| DataMap::new(&self.rest_args).unwrap());
@@ -682,40 +612,33 @@ impl ExprData {
     }
 }
 
-impl FromExpr for ExprData {
-    fn from_expr(expr: &Expr) -> Result<Self>
+impl<'a> FromExpr<'a> for ExprData<'a> {
+    fn from_expr(expr: &Expr<'a>) -> Result<Self>
     where
         Self: Sized,
     {
         Self::from_expr(expr)
     }
+}
 
-    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        Self::from_borrowed_expr(expr)
+impl<'a> FromStr<'a> for ExprData<'a> {}
+
+impl<'a> IntoData for ExprData<'a> {
+    fn into_rpc_data(&self) -> Data<'static> {
+        Data::Data(self.to_owned_data())
     }
 }
 
-impl FromStr for ExprData {}
-
-impl IntoData for ExprData {
-    fn into_rpc_data(&self) -> Data {
-        Data::Data(self.clone())
-    }
-}
-
-impl GetAbleData for ExprData {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data> {
+impl<'a> GetAbleData<'a> for ExprData<'a> {
+    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
         self.get(k)
     }
 }
 
-impl<'a> IntoIterator for &'a ExprData {
-    type Item = <&'a HashMap<String, Data> as IntoIterator>::Item;
+impl<'t, 'a> IntoIterator for &'t ExprData<'a> {
+    type Item = (&'t Cow<'a, str>, &'t Data<'a>);
 
-    type IntoIter = <&'a HashMap<String, Data> as IntoIterator>::IntoIter;
+    type IntoIter = std::collections::hash_map::Iter<'t, Cow<'a, str>, Data<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner_map
@@ -724,55 +647,45 @@ impl<'a> IntoIterator for &'a ExprData {
     }
 }
 
-impl IntoIterator for ExprData {
-    type Item = <HashMap<String, Data> as IntoIterator>::Item;
+impl<'a> IntoIterator for ExprData<'a> {
+    type Item = (Cow<'a, str>, Data<'a>);
 
-    type IntoIter = <HashMap<String, Data> as IntoIterator>::IntoIter;
+    type IntoIter = std::collections::hash_map::IntoIter<Cow<'a, str>, Data<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
+        if self.inner_map.get().is_none() {
+            let _ = self.inner_map.set(DataMap::new(&self.rest_args).unwrap());
+        }
         self.inner_map.into_inner().unwrap().into_iter()
     }
 }
 
 /// Quoted sequence data structure `'("a" 1 2)`.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ListData {
-    inner_data: Vec<Data>,
+pub struct ListData<'a> {
+    inner_data: Vec<Data<'a>>,
 }
 
-impl FromExpr for ListData {
-    fn from_expr(expr: &Expr) -> Result<Self>
+impl<'a> FromExpr<'a> for ListData<'a> {
+    fn from_expr(expr: &Expr<'a>) -> Result<Self>
     where
         Self: Sized,
     {
         Self::from_expr(expr)
     }
+}
 
-    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        match expr {
-            BorrowedExpr::Quote(inner) => Self::from_borrowed_list(*inner),
-            _ => Err(anyhow!(DataError {
-                msg: "cannot generate ListData from this expr, need quoted".to_string(),
-                err_type: DataErrorType::InvalidInput,
-            })),
-        }
+impl<'a> FromStr<'a> for ListData<'a> {}
+
+impl<'a> IntoData for ListData<'a> {
+    fn into_rpc_data(&self) -> Data<'static> {
+        Data::List(self.to_owned_data())
     }
 }
 
-impl FromStr for ListData {}
-
-impl IntoData for ListData {
-    fn into_rpc_data(&self) -> Data {
-        Data::List(self.clone())
-    }
-}
-
-impl ListData {
+impl<'a> ListData<'a> {
     /// Parses a [`ListData`] from a quoted list [`Expr`].
-    pub fn from_expr(expr: &Expr) -> Result<Self> {
+    pub fn from_expr(expr: &Expr<'a>) -> Result<Self> {
         match expr {
             Expr::Quote(expr) => match expr.as_ref() {
                 Expr::List(exprs) => {
@@ -798,21 +711,18 @@ impl ListData {
         }
     }
 
-    fn from_borrowed_list(expr: BorrowedExpr<'_>) -> Result<Self> {
-        match expr {
-            BorrowedExpr::List(exprs) => {
-                let mut res = Vec::with_capacity(exprs.len());
-                for e in exprs {
-                    if !is_nil_borrowed_symbol(&e) {
-                        res.push(Data::from_borrowed_expr(e)?);
-                    }
-                }
-                Ok(Self { inner_data: res })
-            }
-            _ => Err(anyhow!(DataError {
-                msg: "cannot generate ListData from this expr, not list after quote".to_string(),
-                err_type: DataErrorType::InvalidInput,
-            })),
+
+    /// Converts this list into a `'static` owned variant.
+    pub fn into_owned(self) -> ListData<'static> {
+        ListData {
+            inner_data: self.inner_data.into_iter().map(Data::into_owned).collect(),
+        }
+    }
+
+    /// Converts this list reference into a `'static` owned variant.
+    pub fn to_owned_data(&self) -> ListData<'static> {
+        ListData {
+            inner_data: self.inner_data.iter().map(Data::to_owned_data).collect(),
         }
     }
 
@@ -851,20 +761,20 @@ impl ListData {
     }
 }
 
-impl<'a> IntoIterator for &'a ListData {
-    type Item = &'a Data;
+impl<'t, 'a> IntoIterator for &'t ListData<'a> {
+    type Item = &'t Data<'a>;
 
-    type IntoIter = <&'a Vec<Data> as IntoIterator>::IntoIter;
+    type IntoIter = std::slice::Iter<'t, Data<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        (&self.inner_data).into_iter()
+        self.inner_data.iter()
     }
 }
 
-impl IntoIterator for ListData {
-    type Item = Data;
+impl<'a> IntoIterator for ListData<'a> {
+    type Item = Data<'a>;
 
-    type IntoIter = <Vec<Data> as IntoIterator>::IntoIter;
+    type IntoIter = std::vec::IntoIter<Data<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner_data.into_iter()
@@ -873,14 +783,14 @@ impl IntoIterator for ListData {
 
 /// Quoted key-value map data structure `'(:k1 v1 :k2 v2)`.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct MapData {
-    kwrds: Vec<String>,
-    map: DataMap,
+pub struct MapData<'a> {
+    kwrds: Vec<Cow<'a, str>>,
+    map: DataMap<'a>,
 }
 
-impl MapData {
+impl<'a> MapData<'a> {
     /// Parses a [`MapData`] from a quoted map [`Expr`].
-    pub fn from_expr(expr: &Expr) -> Result<Self> {
+    pub fn from_expr(expr: &Expr<'a>) -> Result<Self> {
         match expr {
             Expr::Quote(e2) => match e2.as_ref() {
                 Expr::List(ee) => {
@@ -891,12 +801,12 @@ impl MapData {
                         match (k, v) {
                             (
                                 Expr::Atom(Atom {
-                                    value: crate::TypeValue::Keyword(k),
+                                    value: TypeValue::Keyword(k),
                                 }),
                                 _,
                             ) => {
                                 if !is_nil_symbol(v) {
-                                    let key = k.to_string();
+                                    let key = k.clone();
                                     kwrds.push(key.clone());
                                     table.insert(key, Data::from_expr(v)?);
                                 }
@@ -928,45 +838,28 @@ impl MapData {
         }
     }
 
-    fn from_borrowed_list(expr: BorrowedExpr<'_>) -> Result<Self> {
-        match expr {
-            BorrowedExpr::List(ee) => {
-                let cap = ee.len() / 2;
-                let mut kwrds = Vec::with_capacity(cap);
-                let mut table = HashMap::with_capacity(cap);
-                let mut iter = ee.into_iter();
-                while let Some(k) = iter.next() {
-                    let Some(v) = iter.next() else {
-                        break;
-                    };
-                    match k {
-                        BorrowedExpr::Atom(BorrowedAtom {
-                            value: BorrowedTypeValue::Keyword(k),
-                        }) => {
-                            if !is_nil_borrowed_symbol(&v) {
-                                let key = k.to_string();
-                                kwrds.push(key.clone());
-                                table.insert(key, Data::from_borrowed_expr(v)?);
-                            }
-                        }
-                        _ => {
-                            return Err(anyhow!(DataError {
-                                msg: "MapData has to be keyword pairs like '(:a 1 :b 2)"
-                                    .to_string(),
-                                err_type: DataErrorType::InvalidInput,
-                            }));
-                        }
-                    }
-                }
-                Ok(Self {
-                    kwrds,
-                    map: DataMap { hash_map: table },
-                })
-            }
-            _ => Err(anyhow!(DataError {
-                msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
-                err_type: DataErrorType::InvalidInput,
-            })),
+
+    /// Converts this map into a `'static` owned variant.
+    pub fn into_owned(self) -> MapData<'static> {
+        MapData {
+            kwrds: self
+                .kwrds
+                .into_iter()
+                .map(|k| Cow::Owned(k.into_owned()))
+                .collect(),
+            map: self.map.into_owned(),
+        }
+    }
+
+    /// Converts this map reference into a `'static` owned variant.
+    pub fn to_owned_data(&self) -> MapData<'static> {
+        MapData {
+            kwrds: self
+                .kwrds
+                .iter()
+                .map(|k| Cow::Owned(k.to_string()))
+                .collect(),
+            map: self.map.to_owned_data(),
         }
     }
 
@@ -1020,12 +913,12 @@ impl MapData {
     }
 
     /// Retrieves a value by its key name.
-    pub fn get(&self, k: &str) -> Option<&Data> {
+    pub fn get(&self, k: &str) -> Option<&Data<'a>> {
         self.map.get(k)
     }
 
     /// Returns an iterator over key-value pairs in the map.
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &Data)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Cow<'a, str>, &Data<'a>)> {
         self.map.iter()
     }
 
@@ -1035,68 +928,56 @@ impl MapData {
     }
 }
 
-impl FromExpr for MapData {
-    fn from_expr(expr: &Expr) -> Result<Self>
+impl<'a> FromExpr<'a> for MapData<'a> {
+    fn from_expr(expr: &Expr<'a>) -> Result<Self>
     where
         Self: Sized,
     {
         Self::from_expr(expr)
     }
+}
 
-    fn from_borrowed_expr(expr: BorrowedExpr<'_>) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        match expr {
-            BorrowedExpr::Quote(inner) => Self::from_borrowed_list(*inner),
-            _ => Err(anyhow!(DataError {
-                msg: "MapData has to be quoted like '(:a 1 :b 2)".to_string(),
-                err_type: DataErrorType::InvalidInput,
-            })),
-        }
+impl<'a> FromStr<'a> for MapData<'a> {}
+
+impl<'a> IntoData for MapData<'a> {
+    fn into_rpc_data(&self) -> Data<'static> {
+        Data::Map(self.to_owned_data())
     }
 }
 
-impl FromStr for MapData {}
-
-impl IntoData for MapData {
-    fn into_rpc_data(&self) -> Data {
-        Data::Map(self.clone())
-    }
-}
-
-impl GetAbleData for MapData {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data> {
+impl<'a> GetAbleData<'a> for MapData<'a> {
+    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
         self.get(k)
     }
 }
 
-impl<'a> IntoIterator for &'a MapData {
-    type Item = <&'a HashMap<String, Data> as IntoIterator>::Item;
+impl<'t, 'a> IntoIterator for &'t MapData<'a> {
+    type Item = (&'t Cow<'a, str>, &'t Data<'a>);
 
-    type IntoIter = <&'a HashMap<String, Data> as IntoIterator>::IntoIter;
+    type IntoIter = std::collections::hash_map::Iter<'t, Cow<'a, str>, Data<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         (&self.map).into_iter()
     }
 }
 
-impl IntoIterator for MapData {
-    type Item = <HashMap<String, Data> as IntoIterator>::Item;
+impl<'a> IntoIterator for MapData<'a> {
+    type Item = (Cow<'a, str>, Data<'a>);
 
-    type IntoIter = <HashMap<String, Data> as IntoIterator>::IntoIter;
+    type IntoIter = std::collections::hash_map::IntoIter<Cow<'a, str>, Data<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.map.into_iter()
     }
 }
+
 #[derive(Debug, PartialEq, Eq, Clone)]
-struct DataMap {
-    hash_map: HashMap<String, Data>,
+pub struct DataMap<'a> {
+    hash_map: HashMap<Cow<'a, str>, Data<'a>>,
 }
 
-impl DataMap {
-    fn new(kv: &[(Expr, Data)]) -> Result<Self> {
+impl<'a> DataMap<'a> {
+    fn new(kv: &[(Expr<'a>, Data<'a>)]) -> Result<Self> {
         let mut table = HashMap::with_capacity(kv.len());
 
         for (e, d) in kv {
@@ -1106,7 +987,9 @@ impl DataMap {
                         value: TypeValue::Keyword(k),
                     }),
                     dd,
-                ) => table.insert(k.to_string(), dd.clone()),
+                ) => {
+                    table.insert(k.clone(), dd.clone());
+                }
                 _ => {
                     return Err(anyhow!(DataError {
                         msg: "has to be keyword value pairs for making the data map".to_string(),
@@ -1119,44 +1002,80 @@ impl DataMap {
         Ok(Self { hash_map: table })
     }
 
-    pub fn get(&self, k: &'_ str) -> Option<&Data> {
-        match self.hash_map.get(k) {
-            Some(vv) => Some(vv),
-            None => None,
-        }
+    pub fn get(&self, k: &'_ str) -> Option<&Data<'a>> {
+        self.hash_map.get(k)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &Data)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Cow<'a, str>, &Data<'a>)> {
         self.hash_map.iter()
     }
 
     pub fn len(&self) -> usize {
         self.hash_map.len()
     }
+
+    pub fn into_owned(self) -> DataMap<'static> {
+        DataMap {
+            hash_map: self
+                .hash_map
+                .into_iter()
+                .map(|(k, v)| (Cow::Owned(k.into_owned()), v.into_owned()))
+                .collect(),
+        }
+    }
+
+    pub fn to_owned_data(&self) -> DataMap<'static> {
+        DataMap {
+            hash_map: self
+                .hash_map
+                .iter()
+                .map(|(k, v)| (Cow::Owned(k.to_string()), v.to_owned_data()))
+                .collect(),
+        }
+    }
 }
 
-impl FromIterator<(String, Data)> for DataMap {
-    fn from_iter<T: IntoIterator<Item = (String, Data)>>(iter: T) -> Self {
+impl<'a> FromIterator<(Cow<'a, str>, Data<'a>)> for DataMap<'a> {
+    fn from_iter<T: IntoIterator<Item = (Cow<'a, str>, Data<'a>)>>(iter: T) -> Self {
         Self {
             hash_map: iter.into_iter().collect(),
         }
     }
 }
 
-impl<'a> IntoIterator for &'a DataMap {
-    type Item = <&'a HashMap<String, Data> as IntoIterator>::Item;
+impl<'a> FromIterator<(String, Data<'a>)> for DataMap<'a> {
+    fn from_iter<T: IntoIterator<Item = (String, Data<'a>)>>(iter: T) -> Self {
+        Self {
+            hash_map: iter.into_iter().map(|(k, v)| (Cow::Owned(k), v)).collect(),
+        }
+    }
+}
 
-    type IntoIter = <&'a HashMap<String, Data> as IntoIterator>::IntoIter;
+impl<'a> FromIterator<(&'a str, Data<'a>)> for DataMap<'a> {
+    fn from_iter<T: IntoIterator<Item = (&'a str, Data<'a>)>>(iter: T) -> Self {
+        Self {
+            hash_map: iter
+                .into_iter()
+                .map(|(k, v)| (Cow::Borrowed(k), v))
+                .collect(),
+        }
+    }
+}
+
+impl<'t, 'a> IntoIterator for &'t DataMap<'a> {
+    type Item = (&'t Cow<'a, str>, &'t Data<'a>);
+
+    type IntoIter = std::collections::hash_map::Iter<'t, Cow<'a, str>, Data<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.hash_map.iter()
     }
 }
 
-impl IntoIterator for DataMap {
-    type Item = <HashMap<String, Data> as IntoIterator>::Item;
+impl<'a> IntoIterator for DataMap<'a> {
+    type Item = (Cow<'a, str>, Data<'a>);
 
-    type IntoIter = <HashMap<String, Data> as IntoIterator>::IntoIter;
+    type IntoIter = std::collections::hash_map::IntoIter<Cow<'a, str>, Data<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.hash_map.into_iter()
