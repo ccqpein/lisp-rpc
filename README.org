@@ -32,21 +32,36 @@ Practical examples demonstrating both Plain Mode and Spec Mode usage.
 
 ** [[file:generators/][generators/]]
 
-Implementation of code generators that transform =.lisprpc= specs into library code.
+[[https://crates.io/crates/lisp-rpc-rust-generator][https://img.shields.io/crates/v/lisp-rpc-rust-generator.svg]]
+[[https://docs.rs/lisp-rpc-rust-generator][https://docs.rs/lisp-rpc-rust-generator/badge.svg]]
+
+Command-line application that transforms =.lisprpc= specs into library code.
 
 ** [[file:parsers/][parsers/]]
+
+[[https://crates.io/crates/lisp-rpc-rust-parser][https://img.shields.io/crates/v/lisp-rpc-rust-parser.svg]]
+[[https://docs.rs/lisp-rpc-rust-parser][https://docs.rs/lisp-rpc-rust-parser/badge.svg]]
 
 Core Lisp-RPC parsers written in Rust.
 
 ** [[file:raw-data/][raw-data/]]
 
+[[https://crates.io/crates/lisp-rpc-rust-raw-data][https://img.shields.io/crates/v/lisp-rpc-rust-raw-data.svg]]
+[[https://docs.rs/lisp-rpc-rust-raw-data][https://docs.rs/lisp-rpc-rust-raw-data/badge.svg]]
+
 Core raw data structures (like the =Data= enum) used for dynamic, plain-mode communication.
 
 ** [[file:serializer/][serializer/]]
 
+[[https://crates.io/crates/lisp-rpc-rust-serializer][https://img.shields.io/crates/v/lisp-rpc-rust-serializer.svg]]
+[[https://docs.rs/lisp-rpc-rust-serializer][https://docs.rs/lisp-rpc-rust-serializer/badge.svg]]
+
 Core serialization and deserialization logic.
 
 ** [[file:server/][server/]]
+
+[[https://crates.io/crates/lisp-rpc-rust-server][https://img.shields.io/crates/v/lisp-rpc-rust-server.svg]]
+[[https://docs.rs/lisp-rpc-rust-server][https://docs.rs/lisp-rpc-rust-server/badge.svg]]
 
 Server engine with Actix Web and asynchronous dispatch support.
 

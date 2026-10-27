@@ -1,5 +1,8 @@
 # Lisp-RPC Rust Raw Data
 
+[![crates.io](https://img.shields.io/crates/v/lisp-rpc-rust-raw-data.svg)](https://crates.io/crates/lisp-rpc-rust-raw-data)
+[![docs.rs](https://docs.rs/lisp-rpc-rust-raw-data/badge.svg)](https://docs.rs/lisp-rpc-rust-raw-data)
+
 Core raw data structures for dynamic, schema-free S-expression parsing and manipulation in Lisp-RPC Plain Mode.
 
 ## Overview
