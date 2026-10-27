@@ -72,30 +72,24 @@ impl TypeValueNumber {
 }
 
 #[inline]
-fn push_u64(buf: &mut String, mut n: u64) {
-    if n < 10 {
-        buf.push((b'0' + n as u8) as char);
+fn push_i64(buf: &mut String, n: i64) {
+    if n < 0 {
+        buf.push('-');
+    }
+    let mut u = if n < 0 { n.wrapping_neg() as u64 } else { n as u64 };
+    if u < 10 {
+        buf.push((b'0' + u as u8) as char);
         return;
     }
     let mut tmp = [0u8; 20];
     let mut i = 20;
-    while n > 0 {
+    while u > 0 {
         i -= 1;
-        tmp[i] = b'0' + (n % 10) as u8;
-        n /= 10;
+        tmp[i] = b'0' + (u % 10) as u8;
+        u /= 10;
     }
     // SAFETY: tmp[i..] only contains ASCII digits '0'..='9'
     buf.push_str(unsafe { std::str::from_utf8_unchecked(&tmp[i..]) });
-}
-
-#[inline]
-fn push_i64(buf: &mut String, n: i64) {
-    if n < 0 {
-        buf.push('-');
-        push_u64(buf, n.wrapping_neg() as u64);
-    } else {
-        push_u64(buf, n as u64);
-    }
 }
 
 impl PartialEq for TypeValueNumber {
@@ -263,17 +257,6 @@ impl<'a> TypeValue<'a> {
             TypeValue::Number(n) => TypeValue::Number(n),
         }
     }
-
-    /// Clones this borrowed value into an owned [`TypeValue<'static>`].
-    #[inline]
-    pub fn to_owned_value(&self) -> TypeValue<'static> {
-        match self {
-            TypeValue::Symbol(s) => TypeValue::Symbol(Cow::Owned(s.as_ref().to_string())),
-            TypeValue::String(s) => TypeValue::String(Cow::Owned(s.as_ref().to_string())),
-            TypeValue::Keyword(s) => TypeValue::Keyword(Cow::Owned(s.as_ref().to_string())),
-            TypeValue::Number(n) => TypeValue::Number(*n),
-        }
-    }
 }
 
 /// An atomic value token in a Lisp S-expression.
@@ -333,14 +316,6 @@ impl<'a> Atom<'a> {
     pub fn into_owned(self) -> Atom<'static> {
         Atom {
             value: self.value.into_owned(),
-        }
-    }
-
-    /// Clones this atom into an owned [`Atom<'static>`].
-    #[inline]
-    pub fn to_owned_atom(&self) -> Atom<'static> {
-        Atom {
-            value: self.value.to_owned_value(),
         }
     }
 }
@@ -431,7 +406,7 @@ impl<'a> Expr<'a> {
     }
 
     /// Returns an iterator yielding non-comment expressions from an [`Expr::List`].
-    pub fn filter_out_all_comments(&self) -> Result<impl Iterator<Item = &Expr<'a>>> {
+    pub fn filter_out_all_comments(&self) -> Result<impl Iterator<Item = &Expr<'a>> + Clone> {
         match self {
             Expr::List(exprs) => Ok(exprs.iter().filter(|e| !e.is_comment())),
             _ => Err(anyhow::anyhow!("Not the Expr::List")),
@@ -447,16 +422,6 @@ impl<'a> Expr<'a> {
             Expr::Comment(c) => Expr::Comment(Cow::Owned(c.into_owned())),
         }
     }
-
-    /// Clones this expression tree into an owned [`Expr<'static>`].
-    pub fn to_owned_expr(&self) -> Expr<'static> {
-        match self {
-            Expr::Atom(a) => Expr::Atom(a.to_owned_atom()),
-            Expr::List(list) => Expr::List(list.iter().map(Expr::to_owned_expr).collect()),
-            Expr::Quote(inner) => Expr::Quote(Box::new(inner.to_owned_expr())),
-            Expr::Comment(c) => Expr::Comment(Cow::Owned(c.as_ref().to_string())),
-        }
-    }
 }
 
 impl<'a> std::fmt::Display for Expr<'a> {
@@ -464,11 +429,6 @@ impl<'a> std::fmt::Display for Expr<'a> {
         write!(f, "{}", self.to_string())
     }
 }
-
-/// Owned type aliases for convenience.
-pub type TypeValueOwned = TypeValue<'static>;
-pub type AtomOwned = Atom<'static>;
-pub type ExprOwned = Expr<'static>;
 
 /// Represents the intermediate state of the parser when an input token stream
 /// ends before a full expression could be parsed.
@@ -627,10 +587,6 @@ pub struct Parser {
 
     /// Unprocessed bytes buffered across chunk boundaries (e.g. split multi-byte UTF-8 sequences).
     byte_cache: Vec<u8>,
-
-    /// Recycled `String` allocations from consumed delimiter/number tokens when parser is reused.
-    string_pool: Vec<String>,
-    reuse_pool: bool,
 }
 
 const IS_DELIM: [bool; 256] = {
@@ -654,8 +610,6 @@ impl Default for Parser {
             status: ParsingStatus::Clean,
             exprs: VecDeque::new(),
             byte_cache: vec![],
-            string_pool: Vec::new(),
-            reuse_pool: false,
         }
     }
 }
@@ -663,15 +617,7 @@ impl Default for Parser {
 impl Parser {
     /// Creates a new parser instance with default configuration.
     pub fn new() -> Self {
-        Self {
-            read_number_config: true,
-            tokens: VecDeque::new(),
-            status: ParsingStatus::Clean,
-            exprs: VecDeque::new(),
-            byte_cache: vec![],
-            string_pool: Vec::new(),
-            reuse_pool: false,
-        }
+        Self::default()
     }
 
     /// Configures whether numeric strings are parsed into numbers rather than symbols.
@@ -753,16 +699,6 @@ impl Parser {
         Ok(())
     }
 
-    #[inline(always)]
-    fn alloc_token_str(&mut self, s: &str) -> String {
-        if let Some(mut buf) = self.string_pool.pop() {
-            buf.push_str(s);
-            buf
-        } else {
-            s.to_string()
-        }
-    }
-
     #[inline]
     fn tokenize_valid_str(&mut self, valid_str: &str) {
         if valid_str.is_empty() {
@@ -781,15 +717,13 @@ impl Parser {
             let c = bytes[i];
             if IS_DELIM[c as usize] {
                 if last_start < i {
-                    let word = self.alloc_token_str(&valid_str[last_start..i]);
-                    self.tokens.push_back(word);
+                    self.tokens.push_back(valid_str[last_start..i].to_string());
                     prev_is_space = false;
                 }
 
                 if c == b' ' {
                     if !prev_is_space {
-                        let sp = self.alloc_token_str(" ");
-                        self.tokens.push_back(sp);
+                        self.tokens.push_back(" ".to_string());
                         prev_is_space = true;
                     }
                     i += 1;
@@ -809,8 +743,7 @@ impl Parser {
                         b';' => ";",
                         _ => unreachable!(),
                     };
-                    let tok = self.alloc_token_str(delim_str);
-                    self.tokens.push_back(tok);
+                    self.tokens.push_back(delim_str.to_string());
                     prev_is_space = false;
                 }
 
@@ -825,8 +758,7 @@ impl Parser {
         }
 
         if last_start < len {
-            let word = self.alloc_token_str(&valid_str[last_start..]);
-            self.tokens.push_back(word);
+            self.tokens.push_back(valid_str[last_start..].to_string());
         }
     }
 
@@ -856,16 +788,7 @@ impl Parser {
 
     /// Clear the tokens in the parser
     pub fn clear_tokens(&mut self) -> Result<()> {
-        self.reuse_pool = true;
-        if self.string_pool.capacity() == 0 {
-            self.string_pool.reserve(128);
-        }
-        for mut tok in self.tokens.drain(..) {
-            if tok.capacity() > 0 && self.string_pool.len() < 512 {
-                tok.clear();
-                self.string_pool.push(tok);
-            }
-        }
+        self.tokens.clear();
         Ok(())
     }
 
@@ -877,15 +800,7 @@ impl Parser {
 
     #[inline]
     fn consume_up_to(&mut self, pos: usize) {
-        if self.reuse_pool {
-            let count = pos.min(self.tokens.len());
-            for mut tok in self.tokens.drain(..count) {
-                if tok.capacity() > 0 && self.string_pool.len() < 512 {
-                    tok.clear();
-                    self.string_pool.push(tok);
-                }
-            }
-        } else if pos >= self.tokens.len() {
+        if pos >= self.tokens.len() {
             self.tokens.clear();
         } else if pos > 0 {
             self.tokens.drain(..pos);
@@ -990,80 +905,6 @@ impl Parser {
         scanned
     }
 
-    #[cold]
-    fn restore_taken_from_exprs(
-        tokens: &mut VecDeque<String>,
-        range: std::ops::Range<usize>,
-        exprs: Vec<Expr<'static>>,
-    ) {
-        let mut idx = range.start;
-        for expr in exprs {
-            Self::restore_single_expr(tokens, &mut idx, range.end, expr);
-        }
-    }
-
-    #[cold]
-    fn restore_single_expr(
-        tokens: &mut VecDeque<String>,
-        idx: &mut usize,
-        end: usize,
-        expr: Expr<'static>,
-    ) {
-        match expr {
-            Expr::Atom(atom) => match atom.value {
-                TypeValue::Symbol(s) | TypeValue::Keyword(s) => {
-                    while *idx < end {
-                        if tokens[*idx].is_empty() {
-                            tokens[*idx] = s.into_owned();
-                            *idx += 1;
-                            break;
-                        }
-                        *idx += 1;
-                    }
-                }
-                TypeValue::String(s) => {
-                    // Find opening quote
-                    while *idx < end {
-                        if tokens[*idx].as_bytes() == b"\"" {
-                            *idx += 1;
-                            break;
-                        }
-                        *idx += 1;
-                    }
-                    // If single-token string was moved via mem::take, restore it
-                    if *idx < end && tokens[*idx].is_empty() {
-                        tokens[*idx] = s.into_owned();
-                        *idx += 1;
-                    }
-                    // Advance past closing quote
-                    let mut escape = false;
-                    while *idx < end {
-                        if escape {
-                            escape = false;
-                            *idx += 1;
-                            continue;
-                        }
-                        let b = tokens[*idx].as_bytes();
-                        *idx += 1;
-                        if b == b"\\" {
-                            escape = true;
-                        } else if b == b"\"" {
-                            break;
-                        }
-                    }
-                }
-                TypeValue::Number(_) => {}
-            },
-            Expr::List(list) => {
-                for item in list {
-                    Self::restore_single_expr(tokens, idx, end, item);
-                }
-            }
-            Expr::Quote(inner) => Self::restore_single_expr(tokens, idx, end, *inner),
-            Expr::Comment(_) => {}
-        }
-    }
-
     /// Parses S-expressions directly from a `&str` slice into `self.exprs` without
     /// populating the intermediate `self.tokens` queue.
     pub fn parse_str(&mut self, input: &str) -> Result<(), ParserError> {
@@ -1103,18 +944,6 @@ impl Parser {
     pub fn parse_str_one<'a>(&self, input: &'a str) -> Result<Option<Expr<'a>>, ParserError> {
         let mut sp = SliceParser::new(input, self.read_number_config, true);
         sp.parse_first_expr()
-    }
-
-    /// Alias for [`parse_str_all`].
-    #[inline]
-    pub fn parse_borrowed<'a>(&self, input: &'a str) -> Result<Vec<Expr<'a>>, ParserError> {
-        self.parse_str_all(input)
-    }
-
-    /// Alias for [`parse_str_one`].
-    #[inline]
-    pub fn parse_one_borrowed<'a>(&self, input: &'a str) -> Result<Option<Expr<'a>>, ParserError> {
-        self.parse_str_one(input)
     }
 
     #[inline]
@@ -1361,7 +1190,7 @@ impl Parser {
             }
         }
 
-        let token = std::mem::take(&mut self.tokens[*pos]);
+        let token = self.tokens[*pos].clone();
         *pos += 1;
         Ok(ParsedExpr::Completed(Expr::Atom(Atom {
             value: TypeValue::Symbol(Cow::Owned(token)),
@@ -1448,11 +1277,6 @@ impl Parser {
                             res.push(expr);
                         }
                         ParsedExpr::Incomplete(child_status) => {
-                            Self::restore_taken_from_exprs(
-                                &mut self.tokens,
-                                exp_start..child_start,
-                                res,
-                            );
                             let scanned = self.collect_range(exp_start, child_start);
                             return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadExpr(
                                 scanned,
@@ -1462,7 +1286,6 @@ impl Parser {
                     }
                 }
                 None => {
-                    Self::restore_taken_from_exprs(&mut self.tokens, exp_start..*pos, res);
                     let scanned = self.collect_range(exp_start, *pos);
                     return Ok(ParsedExpr::Incomplete(ParsingStatus::InReadExpr(
                         scanned, None,
@@ -1507,7 +1330,7 @@ impl Parser {
         if self.tokens.get(*pos + 1).map(|s| s.as_bytes()) == Some(b"\"")
             && self.tokens[*pos].as_bytes() != b"\\"
         {
-            let s = std::mem::take(&mut self.tokens[*pos]);
+            let s = self.tokens[*pos].clone();
             *pos += 2;
             return Ok(ParsedExpr::Completed(Expr::Atom(Atom {
                 value: TypeValue::String(Cow::Owned(s)),
@@ -1575,7 +1398,7 @@ impl Parser {
             )));
         }
 
-        let token = std::mem::take(&mut self.tokens[*pos]);
+        let token = self.tokens[*pos].clone();
         *pos += 1;
 
         Ok(ParsedExpr::Completed(Expr::Atom(Atom {
@@ -1770,23 +1593,13 @@ impl<'a> SliceParser<'a> {
 
     #[inline]
     fn parse_all(&mut self, out: &mut VecDeque<Expr<'static>>) -> Result<bool, ParserError> {
-        let len = self.bytes.len();
-        while self.pos < len {
-            let b = self.bytes[self.pos];
-            if b == b' ' || b == b'\n' {
-                self.pos += 1;
-                self.committed_pos = self.pos;
-                continue;
-            }
-
-            match self.parse_expr()? {
+        while self.pos < self.bytes.len() {
+            match self.parse_first_expr()? {
                 Some(expr) => {
                     out.push_back(expr.into_owned());
                     self.committed_pos = self.pos;
                 }
-                None => {
-                    return Ok(false);
-                }
+                None => return Ok(self.committed_pos >= self.bytes.len()),
             }
         }
         Ok(true)
@@ -1794,23 +1607,13 @@ impl<'a> SliceParser<'a> {
 
     #[inline]
     fn parse_all_exprs(&mut self, out: &mut Vec<Expr<'a>>) -> Result<bool, ParserError> {
-        let len = self.bytes.len();
-        while self.pos < len {
-            let b = self.bytes[self.pos];
-            if b == b' ' || b == b'\n' {
-                self.pos += 1;
-                self.committed_pos = self.pos;
-                continue;
-            }
-
-            match self.parse_expr()? {
+        while self.pos < self.bytes.len() {
+            match self.parse_first_expr()? {
                 Some(expr) => {
                     out.push(expr);
                     self.committed_pos = self.pos;
                 }
-                None => {
-                    return Ok(false);
-                }
+                None => return Ok(self.committed_pos >= self.bytes.len()),
             }
         }
         Ok(true)

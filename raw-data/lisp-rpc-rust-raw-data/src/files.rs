@@ -33,7 +33,7 @@ impl DataFile {
                 anyhow::bail!("File can only contains the expr data")
             };
 
-            df.datas.push(d.to_owned_data());
+            df.datas.push(d.into_owned());
         }
 
         Ok(df)

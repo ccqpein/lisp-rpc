@@ -43,15 +43,6 @@ pub trait FromExpr<'a> {
     fn from_expr(expr: &Expr<'a>) -> Result<Self>
     where
         Self: Sized;
-
-    /// Converts an [`Expr`] into `Self`.
-    #[inline]
-    fn from_borrowed_expr(expr: Expr<'a>) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        Self::from_expr(&expr)
-    }
 }
 
 /// Trait for tokenizing and parsing a data structure directly from a string slice.
@@ -190,12 +181,6 @@ impl<'a> Data<'a> {
         }
     }
 
-    /// Converts an [`Expr`] into a [`Data`] instance.
-    #[inline]
-    pub fn from_borrowed_expr(e: Expr<'a>) -> Result<Self> {
-        Self::from_expr(&e)
-    }
-
     pub fn from_exprs<'b>(es: impl Iterator<Item = &'b Expr<'a>>) -> Result<Vec<Self>>
     where
         'a: 'b,
@@ -215,17 +200,6 @@ impl<'a> Data<'a> {
             Data::Map(m) => Data::Map(m.into_owned()),
             Data::Value(v) => Data::Value(v.into_owned()),
             Data::Error(e) => Data::Error(e),
-        }
-    }
-
-    /// Converts this dynamic data structure reference into a `'static` owned variant.
-    pub fn to_owned_data(&self) -> Data<'static> {
-        match self {
-            Data::Data(d) => Data::Data(d.to_owned_data()),
-            Data::List(l) => Data::List(l.to_owned_data()),
-            Data::Map(m) => Data::Map(m.to_owned_data()),
-            Data::Value(v) => Data::Value(v.to_owned_value()),
-            Data::Error(e) => Data::Error(e.clone()),
         }
     }
 
@@ -365,7 +339,7 @@ impl<'a> std::fmt::Display for Data<'a> {
 
 impl<'a> IntoData for Data<'a> {
     fn into_rpc_data(&self) -> Data<'static> {
-        self.to_owned_data()
+        self.clone().into_owned()
     }
 }
 
@@ -387,77 +361,22 @@ pub struct ExprData<'a> {
 impl<'a> ExprData<'a> {
     /// Parses an [`ExprData`] from a list [`Expr`].
     pub fn from_expr(expr: &Expr<'a>) -> Result<Self> {
-        let Expr::List(list) = expr else {
-            return Err(anyhow!(DataError {
+        let mut iter = expr.filter_out_all_comments().map_err(|_| {
+            anyhow!(DataError {
                 msg: "Not the Expr::List".to_string(),
                 err_type: DataErrorType::InvalidInput,
-            }));
-        };
+            })
+        })?;
 
-        let has_comments = list.iter().any(Expr::is_comment);
-        if !has_comments {
-            if list.is_empty() {
-                return Err(anyhow!(DataError {
-                    msg: "empty data".to_string(),
-                    err_type: DataErrorType::InvalidInput,
-                }));
-            }
-            if list.len() % 2 != 1 {
-                return Err(anyhow!(DataError {
-                    msg: format!(
-                        "rest data from {}... has to be odd length elements",
-                        expr.to_string().get(0..10).unwrap_or("")
-                    ),
-                    err_type: DataErrorType::InvalidInput,
-                }));
-            }
-            let name = match &list[0] {
-                Expr::Atom(Atom {
-                    value: TypeValue::Symbol(s),
-                }) => s.clone(),
-                _ => {
-                    return Err(anyhow!(DataError {
-                        msg: "data's first element has to be symbol".to_string(),
-                        err_type: DataErrorType::InvalidInput,
-                    }));
-                }
-            };
-
-            let mut rest_a = Vec::with_capacity((list.len() - 1) / 2);
-            for [k, v] in list[1..].iter().array_chunks() {
-                match k {
-                    Expr::Atom(Atom {
-                        value: TypeValue::Keyword(_),
-                    }) => {
-                        if !is_nil_symbol(v) {
-                            rest_a.push((k.clone(), Data::from_expr(v)?));
-                        }
-                    }
-                    _ => {
-                        return Err(anyhow!(DataError {
-                            msg: "has to be keyword value pairs".to_string(),
-                            err_type: DataErrorType::InvalidInput,
-                        }));
-                    }
-                }
-            }
-            return Ok(Self {
-                name,
-                rest_args: rest_a,
-                inner_map: OnceCell::new(),
-            });
-        }
-
-        let exprs = expr.filter_out_all_comments()?.collect::<Vec<_>>();
-
-        if exprs.is_empty() {
+        let count = iter.clone().count();
+        if count == 0 {
             return Err(anyhow!(DataError {
                 msg: "empty data".to_string(),
                 err_type: DataErrorType::InvalidInput,
             }));
         }
 
-        if exprs.len() % 2 != 1 {
+        if count % 2 != 1 {
             return Err(anyhow!(DataError {
                 msg: format!(
                     "rest data from {}... has to be odd length elements",
@@ -467,7 +386,7 @@ impl<'a> ExprData<'a> {
             }));
         }
 
-        let name = match &exprs[0] {
+        let name = match iter.next().unwrap() {
             Expr::Atom(Atom {
                 value: TypeValue::Symbol(s),
             }) => s.clone(),
@@ -479,18 +398,15 @@ impl<'a> ExprData<'a> {
             }
         };
 
-        let mut rest_a = Vec::with_capacity((exprs.len() - 1) / 2);
-        for [&k, v] in exprs[1..].into_iter().array_chunks() {
-            match (k, v) {
-                (
-                    Expr::Atom(Atom {
-                        value: TypeValue::Keyword(_),
-                    }),
-                    _,
-                ) => {
+        let mut rest_a = Vec::with_capacity((count - 1) / 2);
+        for [k, v] in iter.array_chunks() {
+            match k {
+                Expr::Atom(Atom {
+                    value: TypeValue::Keyword(_),
+                }) => {
                     if !is_nil_symbol(v) {
-                        rest_a.push((k.clone(), Data::from_expr(v)?))
-                    };
+                        rest_a.push((k.clone(), Data::from_expr(v)?));
+                    }
                 }
                 _ => {
                     return Err(anyhow!(DataError {
@@ -506,12 +422,6 @@ impl<'a> ExprData<'a> {
             rest_args: rest_a,
             inner_map: OnceCell::new(), // generate when get method called
         })
-    }
-
-    /// Parses an [`ExprData`] from an [`Expr`].
-    #[inline]
-    pub fn from_borrowed_expr(expr: Expr<'a>) -> Result<Self> {
-        Self::from_expr(&expr)
     }
 
     /// Creates a new [`ExprData`] with the given name and argument pairs.
@@ -536,19 +446,6 @@ impl<'a> ExprData<'a> {
                 .rest_args
                 .into_iter()
                 .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                .collect(),
-            inner_map: OnceCell::new(),
-        }
-    }
-
-    /// Converts this data expression reference into a `'static` owned variant.
-    pub fn to_owned_data(&self) -> ExprData<'static> {
-        ExprData {
-            name: Cow::Owned(self.name.to_string()),
-            rest_args: self
-                .rest_args
-                .iter()
-                .map(|(k, v)| (k.to_owned_expr(), v.to_owned_data()))
                 .collect(),
             inner_map: OnceCell::new(),
         }
@@ -625,7 +522,7 @@ impl<'a> FromStr<'a> for ExprData<'a> {}
 
 impl<'a> IntoData for ExprData<'a> {
     fn into_rpc_data(&self) -> Data<'static> {
-        Data::Data(self.to_owned_data())
+        Data::Data(self.clone().into_owned())
     }
 }
 
@@ -679,7 +576,7 @@ impl<'a> FromStr<'a> for ListData<'a> {}
 
 impl<'a> IntoData for ListData<'a> {
     fn into_rpc_data(&self) -> Data<'static> {
-        Data::List(self.to_owned_data())
+        Data::List(self.clone().into_owned())
     }
 }
 
@@ -711,18 +608,10 @@ impl<'a> ListData<'a> {
         }
     }
 
-
     /// Converts this list into a `'static` owned variant.
     pub fn into_owned(self) -> ListData<'static> {
         ListData {
             inner_data: self.inner_data.into_iter().map(Data::into_owned).collect(),
-        }
-    }
-
-    /// Converts this list reference into a `'static` owned variant.
-    pub fn to_owned_data(&self) -> ListData<'static> {
-        ListData {
-            inner_data: self.inner_data.iter().map(Data::to_owned_data).collect(),
         }
     }
 
@@ -851,18 +740,6 @@ impl<'a> MapData<'a> {
         }
     }
 
-    /// Converts this map reference into a `'static` owned variant.
-    pub fn to_owned_data(&self) -> MapData<'static> {
-        MapData {
-            kwrds: self
-                .kwrds
-                .iter()
-                .map(|k| Cow::Owned(k.to_string()))
-                .collect(),
-            map: self.map.to_owned_data(),
-        }
-    }
-
     #[inline]
     fn estimated_len(&self) -> usize {
         let mut len = 3;
@@ -941,7 +818,7 @@ impl<'a> FromStr<'a> for MapData<'a> {}
 
 impl<'a> IntoData for MapData<'a> {
     fn into_rpc_data(&self) -> Data<'static> {
-        Data::Map(self.to_owned_data())
+        Data::Map(self.clone().into_owned())
     }
 }
 
@@ -1020,16 +897,6 @@ impl<'a> DataMap<'a> {
                 .hash_map
                 .into_iter()
                 .map(|(k, v)| (Cow::Owned(k.into_owned()), v.into_owned()))
-                .collect(),
-        }
-    }
-
-    pub fn to_owned_data(&self) -> DataMap<'static> {
-        DataMap {
-            hash_map: self
-                .hash_map
-                .iter()
-                .map(|(k, v)| (Cow::Owned(k.to_string()), v.to_owned_data()))
                 .collect(),
         }
     }
