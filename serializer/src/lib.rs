@@ -12,10 +12,7 @@ pub use serializer::*;
 /// Serializes a value into a Lisp-RPC S-expression string.
 pub fn lisp_rpc_to_str(v: impl Serialize) -> Result<String> {
     let mut buf = Vec::with_capacity(256);
-
-    let mut _s = serializer::LispRPCSerializer::new(&mut buf);
-    v.serialize(&mut _s)?;
-    let pos = _s.pos;
+    let pos = lisp_rpc_to_buf(v, &mut buf)?;
     buf.truncate(pos);
 
     Ok(String::from_utf8(buf)?)

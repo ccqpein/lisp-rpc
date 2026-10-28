@@ -1,6 +1,20 @@
 //! Core raw data structures for dynamic, schema-free S-expression parsing and manipulation in Lisp-RPC Plain Mode.
 //!
 //! Named S-expression data structures take the form `(name :key1 val1 :key2 val2)`.
+//!
+//! # Quick Start
+//!
+//! ```rust
+//! use lisp_rpc_rust_parser::Parser;
+//! use lisp_rpc_rust_raw_data::{Data, FromStr};
+//!
+//! let mut parser = Parser::new();
+//! let input = r#"(person :name "Alice" :age 30)"#;
+//!
+//! let data = Data::from_str(&mut parser, input).unwrap();
+//! assert_eq!(data.get("name").unwrap().get_string().unwrap(), "Alice");
+//! assert_eq!(data.get("age").unwrap().to_int(), Some(30));
+//! ```
 #![feature(iter_array_chunks)]
 
 pub mod files;
@@ -181,6 +195,7 @@ impl<'a> Data<'a> {
         }
     }
 
+    /// Converts an iterator of [`Expr`] references into a `Vec<Data<'a>>`.
     pub fn from_exprs<'b>(es: impl Iterator<Item = &'b Expr<'a>>) -> Result<Vec<Self>>
     where
         'a: 'b,
@@ -203,22 +218,6 @@ impl<'a> Data<'a> {
         }
     }
 
-    #[inline]
-    fn estimated_len(&self) -> usize {
-        match self {
-            Data::Data(d) => d.estimated_len(),
-            Data::List(l) => l.estimated_len(),
-            Data::Map(m) => m.estimated_len(),
-            Data::Value(tv) => match tv {
-                TypeValue::Symbol(s) => s.len(),
-                TypeValue::String(s) => s.len() + 2,
-                TypeValue::Keyword(s) => s.len() + 1,
-                TypeValue::Number(_) => 8,
-            },
-            Data::Error(e) => e.msg.len() + 32,
-        }
-    }
-
     /// Appends the formatted S-expression representation directly into `buf`.
     pub fn write_to(&self, buf: &mut String) {
         match self {
@@ -235,7 +234,7 @@ impl<'a> Data<'a> {
 
     /// Serializes the data into a Lisp-RPC S-expression string.
     pub fn to_string(&self) -> String {
-        let mut buf = String::with_capacity(self.estimated_len());
+        let mut buf = String::with_capacity(64);
         self.write_to(&mut buf);
         buf
     }
@@ -456,27 +455,6 @@ impl<'a> ExprData<'a> {
         &self.name
     }
 
-    #[inline]
-    fn estimated_len(&self) -> usize {
-        let mut len = 3 + self.name.len();
-        for (i, (k, v)) in self.rest_args.iter().enumerate() {
-            if i > 0 {
-                len += 1;
-            }
-            len += match k {
-                Expr::Atom(a) => match &a.value {
-                    TypeValue::Keyword(s) => s.len() + 1,
-                    TypeValue::Symbol(s) => s.len(),
-                    TypeValue::String(s) => s.len() + 2,
-                    TypeValue::Number(_) => 8,
-                },
-                _ => 8,
-            };
-            len += 1 + v.estimated_len();
-        }
-        len
-    }
-
     /// Appends the formatted S-expression directly into `buf`.
     pub fn write_to(&self, buf: &mut String) {
         buf.push('(');
@@ -495,7 +473,7 @@ impl<'a> ExprData<'a> {
 
     /// Serializes the expression into an S-expression string.
     pub fn to_string(&self) -> String {
-        let mut buf = String::with_capacity(self.estimated_len());
+        let mut buf = String::with_capacity(64);
         self.write_to(&mut buf);
         buf
     }
@@ -615,16 +593,6 @@ impl<'a> ListData<'a> {
         }
     }
 
-    #[inline]
-    fn estimated_len(&self) -> usize {
-        3 + self.inner_data.len().saturating_sub(1)
-            + self
-                .inner_data
-                .iter()
-                .map(Data::estimated_len)
-                .sum::<usize>()
-    }
-
     /// Appends the formatted quoted list directly into `buf`.
     pub fn write_to(&self, buf: &mut String) {
         buf.push_str("'(");
@@ -639,7 +607,7 @@ impl<'a> ListData<'a> {
 
     /// Serializes the list into a quoted S-expression string.
     pub fn to_string(&self) -> String {
-        let mut buf = String::with_capacity(self.estimated_len());
+        let mut buf = String::with_capacity(64);
         self.write_to(&mut buf);
         buf
     }
@@ -740,23 +708,6 @@ impl<'a> MapData<'a> {
         }
     }
 
-    #[inline]
-    fn estimated_len(&self) -> usize {
-        let mut len = 3;
-        for (i, k) in self.kwrds.iter().enumerate() {
-            if i > 0 {
-                len += 1;
-            }
-            len += 2 + k.len();
-            if let Some(v) = self.map.get(k) {
-                len += v.estimated_len();
-            } else {
-                len += 32;
-            }
-        }
-        len
-    }
-
     /// Appends the formatted quoted map directly into `buf`.
     pub fn write_to(&self, buf: &mut String) {
         buf.push_str("'(");
@@ -784,7 +735,7 @@ impl<'a> MapData<'a> {
 
     /// Serializes the map into a quoted S-expression string.
     pub fn to_string(&self) -> String {
-        let mut buf = String::with_capacity(self.estimated_len());
+        let mut buf = String::with_capacity(64);
         self.write_to(&mut buf);
         buf
     }
@@ -848,6 +799,7 @@ impl<'a> IntoIterator for MapData<'a> {
     }
 }
 
+/// Hash map indexing [`Data<'a>`] values by keyword name.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DataMap<'a> {
     hash_map: HashMap<Cow<'a, str>, Data<'a>>,
@@ -879,18 +831,22 @@ impl<'a> DataMap<'a> {
         Ok(Self { hash_map: table })
     }
 
+    /// Retrieves a reference to the [`Data`] value matching `k`.
     pub fn get(&self, k: &'_ str) -> Option<&Data<'a>> {
         self.hash_map.get(k)
     }
 
+    /// Returns an iterator over key-value pairs in the map.
     pub fn iter(&self) -> impl Iterator<Item = (&Cow<'a, str>, &Data<'a>)> {
         self.hash_map.iter()
     }
 
+    /// Returns the number of entries in the map.
     pub fn len(&self) -> usize {
         self.hash_map.len()
     }
 
+    /// Converts this map into a `'static` owned [`DataMap<'static>`].
     pub fn into_owned(self) -> DataMap<'static> {
         DataMap {
             hash_map: self

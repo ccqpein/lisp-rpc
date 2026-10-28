@@ -1,4 +1,21 @@
-//! Core tokenizer and parser for Lisp-RPC S-expressions.
+//! Core tokenizer, zero-copy S-expression parser, and asynchronous stream parser for Lisp-RPC.
+//!
+//! # Quick Start
+//!
+//! ```rust
+//! use lisp_rpc_rust_parser::Parser;
+//!
+//! let parser = Parser::new();
+//! let input = r#"(get-book :title "The Hobbit" :year 1937)"#;
+//!
+//! // Parse the first S-expression (borrowing string slices directly from `input`)
+//! let expr = parser.parse_str_one(input).unwrap().unwrap();
+//! assert_eq!(expr.to_string(), input);
+//!
+//! // Parse all S-expressions in a string slice
+//! let exprs = parser.parse_str_all(input).unwrap();
+//! assert_eq!(exprs.len(), 1);
+//! ```
 
 use anyhow::Result;
 use std::{borrow::Cow, collections::VecDeque, error::Error, io::Read};
@@ -334,24 +351,6 @@ pub enum Expr<'a> {
 }
 
 impl<'a> Expr<'a> {
-    #[inline]
-    fn estimated_len(&self) -> usize {
-        match self {
-            Expr::Atom(a) => match &a.value {
-                TypeValue::Symbol(s) => s.len(),
-                TypeValue::String(s) => s.len() + 2,
-                TypeValue::Keyword(s) => s.len() + 1,
-                TypeValue::Number(_) => 8,
-            },
-            Expr::List(exprs) => {
-                2 + exprs.len().saturating_sub(1)
-                    + exprs.iter().map(Expr::estimated_len).sum::<usize>()
-            }
-            Expr::Quote(e) => 1 + e.estimated_len(),
-            Expr::Comment(s) => 2 + s.len(),
-        }
-    }
-
     /// Appends the formatted S-expression tree directly into `buf`.
     pub fn write_to(&self, buf: &mut String) {
         match self {
@@ -379,7 +378,7 @@ impl<'a> Expr<'a> {
 
     /// Formats the expression tree as an S-expression string.
     pub fn to_string(&self) -> String {
-        let mut buf = String::with_capacity(self.estimated_len());
+        let mut buf = String::with_capacity(64);
         self.write_to(&mut buf);
         buf
     }
@@ -580,6 +579,7 @@ pub struct Parser {
     /// Token queue populated by [`tokenize`](Parser::tokenize).
     pub tokens: VecDeque<String>,
 
+    /// Current parsing status when reading incrementally from [`tokens`](Parser::tokens).
     pub status: ParsingStatus,
 
     /// Parsed expression nodes populated by [`parse`](Parser::parse).
@@ -632,36 +632,6 @@ impl Parser {
     /// skips empty chunks, and optimizes token extraction without intermediate allocations.
     pub fn tokenize(&mut self, mut source_code: impl Read) -> Result<()> {
         source_code.read_to_end(&mut self.byte_cache)?;
-        self.tokenize_cached_bytes()
-    }
-
-    /// Tokenizes a byte slice directly into the token queue.
-    #[inline]
-    pub fn tokenize_slice(&mut self, bytes: &[u8]) -> Result<()> {
-        if bytes.is_empty() && self.byte_cache.is_empty() {
-            return Ok(());
-        }
-        if self.byte_cache.is_empty() {
-            let (valid_str, remaining_len) = match std::str::from_utf8(bytes) {
-                Ok(s) => (s, 0),
-                Err(e) if e.error_len().is_none() => {
-                    let valid_up_to = e.valid_up_to();
-                    // SAFETY: valid_up_to is guaranteed by Utf8Error to be valid UTF-8
-                    let valid = unsafe { std::str::from_utf8_unchecked(&bytes[..valid_up_to]) };
-                    let rem = bytes.len() - valid_up_to;
-                    (valid, rem)
-                }
-                Err(e) => return Err(e.into()),
-            };
-            self.tokenize_valid_str(valid_str);
-            if remaining_len > 0 {
-                self.byte_cache
-                    .extend_from_slice(&bytes[bytes.len() - remaining_len..]);
-            }
-            return Ok(());
-        }
-
-        self.byte_cache.extend_from_slice(bytes);
         self.tokenize_cached_bytes()
     }
 
@@ -807,95 +777,6 @@ impl Parser {
         }
     }
 
-    #[inline]
-    pub(crate) fn has_potentially_complete_expr(&self) -> bool {
-        if self.status.is_incomplete() {
-            return true;
-        }
-        let len = self.tokens.len();
-        let mut idx = 0;
-        while idx < len {
-            let b = self.tokens[idx].as_bytes();
-            if b != b" " && b != b"\n" {
-                break;
-            }
-            idx += 1;
-        }
-        while idx < len && self.tokens[idx].as_bytes() == b"'" {
-            idx += 1;
-        }
-        if idx >= len {
-            return false;
-        }
-
-        match self.tokens[idx].as_bytes() {
-            b"(" => {
-                let mut depth = 0usize;
-                let mut in_string = false;
-                let mut escape = false;
-                let mut in_comment = false;
-                for i in idx..len {
-                    let b = self.tokens[i].as_bytes();
-                    if in_comment {
-                        if b == b"\n" {
-                            in_comment = false;
-                        }
-                        continue;
-                    }
-                    if in_string {
-                        if escape {
-                            escape = false;
-                        } else if b == b"\\" {
-                            escape = true;
-                        } else if b == b"\"" {
-                            in_string = false;
-                        }
-                        continue;
-                    }
-                    match b {
-                        b"(" => depth += 1,
-                        b")" => {
-                            depth = depth.saturating_sub(1);
-                            if depth == 0 {
-                                return true;
-                            }
-                        }
-                        b"\"" => in_string = true,
-                        b";" => in_comment = true,
-                        _ => {}
-                    }
-                }
-                false
-            }
-            b"\"" => {
-                let mut escape = false;
-                for i in (idx + 1)..len {
-                    if escape {
-                        escape = false;
-                        continue;
-                    }
-                    let b = self.tokens[i].as_bytes();
-                    if b == b"\\" {
-                        escape = true;
-                    } else if b == b"\"" {
-                        return true;
-                    }
-                }
-                false
-            }
-            b":" => idx + 1 < len,
-            b";" => {
-                for i in (idx + 1)..len {
-                    if self.tokens[i].as_bytes() == b"\n" {
-                        return true;
-                    }
-                }
-                false
-            }
-            _ => true,
-        }
-    }
-
     #[cold]
     fn collect_range(&mut self, start: usize, end: usize) -> VecDeque<String> {
         let mut scanned = VecDeque::with_capacity(end.saturating_sub(start));
@@ -903,31 +784,6 @@ impl Parser {
             scanned.push_back(std::mem::take(&mut self.tokens[i]));
         }
         scanned
-    }
-
-    /// Parses S-expressions directly from a `&str` slice into `self.exprs` without
-    /// populating the intermediate `self.tokens` queue.
-    pub fn parse_str(&mut self, input: &str) -> Result<(), ParserError> {
-        if self.status == ParsingStatus::Error {
-            return Err(ParserError::CorruptData("parser is in an error state"));
-        }
-        let mut sp = SliceParser::new(input, self.read_number_config, true);
-        match sp.parse_all(&mut self.exprs) {
-            Ok(true) => {
-                self.status = ParsingStatus::Clean;
-                Ok(())
-            }
-            Ok(false) => {
-                // Incomplete tail: tokenize only the unconsumed suffix to populate `self.status`
-                let rem = &input[sp.committed_pos..];
-                let _ = self.tokenize_slice(rem.as_bytes());
-                self.parse()
-            }
-            Err(e) => {
-                self.status = ParsingStatus::Error;
-                Err(e)
-            }
-        }
     }
 
     /// Parses all S-expressions from `input` into [`Expr<'a>`] nodes without allocating token strings.
@@ -944,20 +800,6 @@ impl Parser {
     pub fn parse_str_one<'a>(&self, input: &'a str) -> Result<Option<Expr<'a>>, ParserError> {
         let mut sp = SliceParser::new(input, self.read_number_config, true);
         sp.parse_first_expr()
-    }
-
-    #[inline]
-    pub(crate) fn is_waiting_on_list(&self) -> bool {
-        let bytes = &self.byte_cache;
-        let len = bytes.len();
-        let mut i = 0;
-        while i < len && (bytes[i] == b' ' || bytes[i] == b'\n') {
-            i += 1;
-        }
-        while i < len && bytes[i] == b'\'' {
-            i += 1;
-        }
-        i < len && bytes[i] == b'('
     }
 
     /// Parses complete S-expressions from `self.byte_cache` in streaming mode.
@@ -978,9 +820,7 @@ impl Parser {
                     ));
                 }
             }
-            if at_eof || self.has_potentially_complete_expr() {
-                self.parse()?;
-            }
+            self.parse()?;
             return Ok(!self.status.is_incomplete() && self.tokens.is_empty());
         }
 
@@ -1464,16 +1304,24 @@ impl Parser {
     }
 }
 
+/// Single-pass cursor parser over a borrowed UTF-8 `&'a str` slice.
 struct SliceParser<'a> {
+    /// UTF-8 source slice being parsed.
     s: &'a str,
+    /// Raw byte view of `s` (`s.as_bytes()`).
     bytes: &'a [u8],
+    /// Current read cursor byte offset within `bytes`.
     pos: usize,
+    /// Byte offset immediately following the last completed top-level [`Expr`].
     committed_pos: usize,
+    /// Whether numeric tokens are parsed into [`TypeValue::Number`] instead of [`TypeValue::Symbol`].
     read_number: bool,
+    /// Whether `s` is at the end of the input stream.
     at_eof: bool,
 }
 
 impl<'a> SliceParser<'a> {
+    /// Creates a new `SliceParser` over `s`.
     #[inline]
     fn new(s: &'a str, read_number: bool, at_eof: bool) -> Self {
         Self {
@@ -1486,6 +1334,7 @@ impl<'a> SliceParser<'a> {
         }
     }
 
+    /// Checks whether `bytes` contains at least one potentially complete top-level expression.
     #[inline]
     fn has_potentially_complete_in_slice(bytes: &[u8]) -> bool {
         let len = bytes.len();
@@ -1555,6 +1404,7 @@ impl<'a> SliceParser<'a> {
         }
     }
 
+    /// Returns the next token slice from `self.s` and advances `self.pos`.
     #[inline(always)]
     fn next_token(&mut self) -> Option<&'a str> {
         let bytes = self.bytes;
@@ -1591,6 +1441,8 @@ impl<'a> SliceParser<'a> {
         }
     }
 
+    /// Parses all complete top-level expressions into owned [`Expr<'static>`] nodes.
+    /// Returns `Ok(true)` if the entire slice was consumed, or `Ok(false)` if an incomplete tail remains.
     #[inline]
     fn parse_all(&mut self, out: &mut VecDeque<Expr<'static>>) -> Result<bool, ParserError> {
         while self.pos < self.bytes.len() {
@@ -1605,6 +1457,8 @@ impl<'a> SliceParser<'a> {
         Ok(true)
     }
 
+    /// Parses all complete top-level expressions into borrowed [`Expr<'a>`] nodes.
+    /// Returns `Ok(true)` if the entire slice was consumed, or `Ok(false)` if an incomplete tail remains.
     #[inline]
     fn parse_all_exprs(&mut self, out: &mut Vec<Expr<'a>>) -> Result<bool, ParserError> {
         while self.pos < self.bytes.len() {
@@ -1619,6 +1473,7 @@ impl<'a> SliceParser<'a> {
         Ok(true)
     }
 
+    /// Skips leading whitespace and parses the next [`Expr<'a>`].
     #[inline]
     fn parse_first_expr(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         let len = self.bytes.len();
@@ -1634,6 +1489,7 @@ impl<'a> SliceParser<'a> {
         Ok(None)
     }
 
+    /// Dispatches to the appropriate expression parser based on the current byte at `self.pos`.
     #[inline(always)]
     fn parse_expr(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         if self.pos >= self.bytes.len() {
@@ -1649,6 +1505,7 @@ impl<'a> SliceParser<'a> {
         }
     }
 
+    /// Parses a parenthesized list `(expr1 expr2 ...)` into [`Expr::List`].
     #[inline]
     fn parse_list(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip '('
@@ -1673,6 +1530,7 @@ impl<'a> SliceParser<'a> {
         Ok(None)
     }
 
+    /// Parses a quoted expression `'expr` into [`Expr::Quote`].
     #[inline]
     fn parse_quote(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip '\''
@@ -1682,6 +1540,7 @@ impl<'a> SliceParser<'a> {
         }
     }
 
+    /// Parses a keyword `:name` into [`TypeValue::Keyword`].
     #[inline]
     fn parse_keyword(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip ':'
@@ -1693,6 +1552,7 @@ impl<'a> SliceParser<'a> {
         })))
     }
 
+    /// Parses a double-quoted string literal `"..."` into [`TypeValue::String`].
     #[inline]
     fn parse_string(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip opening '"'
@@ -1758,6 +1618,7 @@ impl<'a> SliceParser<'a> {
         })))
     }
 
+    /// Parses a line comment `; ... \n` into [`Expr::Comment`].
     #[inline]
     fn parse_comment(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         self.pos += 1; // skip ';'
@@ -1821,6 +1682,7 @@ impl<'a> SliceParser<'a> {
         Ok(Some(Expr::Comment(Cow::Owned(res))))
     }
 
+    /// Parses an atom token into [`TypeValue::Number`] or [`TypeValue::Symbol`].
     #[inline]
     fn parse_atom(&mut self) -> Result<Option<Expr<'a>>, ParserError> {
         let Some(tok) = self.next_token() else {

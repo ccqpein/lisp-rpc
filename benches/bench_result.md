@@ -97,8 +97,8 @@
 |--------------------------------------------|----------------------:|----------------------:|------------------------:|----------------:|
 | `bench_raw_data_from_str`                  | `1.7635 µs` (1764 ns) | `1.1823 µs` (1182 ns) | **-71.2%** (vs 4.109 µs)| **3.5x**        |
 | `bench_raw_data_to_string`                 | `644.37 ns`           | `654.22 ns`           | **-81.9%** (vs 3.610 µs)| **5.5x**        |
-| `bench_parse_borrowed_small` *(zero-copy)* | `123.61 ns`           | `122.78 ns`           | **-92.3%** (vs 1.604 µs)| **13.1x**       |
-| `bench_parse_borrowed_realistic` *(0-copy)*| `564.63 ns`           | `548.96 ns`           | **-92.3%** (vs 7.113 µs)| **13.0x**       |
+| `bench_parse_str_one_small` *(zero-copy)*  | `123.61 ns`           | `122.78 ns`           | **-92.3%** (vs 1.604 µs)| **13.1x**       |
+| `bench_parse_str_one_realistic` *(0-copy)* | `564.63 ns`           | `548.96 ns`           | **-92.3%** (vs 7.113 µs)| **13.0x**       |
 | `bench_serializer_to_str`                  | `273.45 ns`           | `273.85 ns`           | **-99.1%** (vs 29.97 µs)| **109.5x**      |
 | `bench_deserializer_from_str`              | `380.50 ns`           | `383.12 ns`           | **-98.2%** (vs 21.70 µs)| **56.6x**       |
 | `bench_parse_schema_defs`                  | `3.7945 µs`           | `3.8224 µs`           | **-63.4%** (vs 10.43 µs)| **2.7x**        |
@@ -106,6 +106,25 @@
 | `bench_stream_parser_chunked_32b`          | `1.8677 µs`           | `2.0791 µs`           | **-93.8%** (vs 33.39 µs)| **16.1x**       |
 | `bench_expr_to_string`                     | `346.06 ns`           | `357.00 ns`           | **-87.6%** (vs 2.885 µs)| **8.1x**        |
 
+**10/28/2026 - Step 9: Codebase Simplification & Cleanup (~500 lines of intermediate helpers removed)**
+> Consolidated `Parser` string parsing APIs to `parse_str_all` and `parse_str_one` (dropping transitional `parse_str`, `parse_borrowed`, `parse_one_borrowed`, and `tokenize_slice`). Removed legacy token-pool (`string_pool`, `reuse_pool`) and rollback helpers (`restore_taken_from_exprs`, `restore_single_expr`, `has_potentially_complete_expr`, `is_waiting_on_list`). Unified `ExprData::from_expr` into a single pass over `filter_out_all_comments()`, consolidated `to_owned_*` into `into_owned`, and removed the 2nd-pass `estimated_len` AST pre-calculation helpers from `Expr`, `Data`, `ExprData`, `ListData`, and `MapData` (making `to_string()` single-pass).
 
-
-
+| Benchmark Name                             | Baseline              | Cleaned-Up Result     | vs. Baseline            | Overall Speedup |
+|--------------------------------------------|----------------------:|----------------------:|------------------------:|----------------:|
+| `bench_tokenize_small`                     | `595.97 ns`           | `448.42 ns`           | **-24.8%**              | **1.3x**        |
+| `bench_parse_small`                        | `1.6041 µs` (1604 ns) | `606.12 ns`           | **-62.2%**              | **2.6x**        |
+| `bench_tokenize_realistic`                 | `2.0815 µs` (2082 ns) | `1.7298 µs` (1730 ns) | **-16.9%**              | **1.2x**        |
+| `bench_parse_realistic_new_parser`         | `7.1128 µs` (7113 ns) | `2.5995 µs` (2600 ns) | **-63.5%**              | **2.7x**        |
+| `bench_parse_realistic_reused_parser`      | `6.9700 µs` (6970 ns) | `2.4185 µs` (2419 ns) | **-65.3%**              | **2.9x**        |
+| `bench_parse_str_all_small` *(zero-copy)*  | `1.6041 µs` (1604 ns) | `126.77 ns`           | **-92.1%**              | **12.7x**       |
+| `bench_parse_str_all_realistic` *(0-copy)* | `7.1128 µs` (7113 ns) | `558.68 ns`           | **-92.1%**              | **12.7x**       |
+| `bench_parse_str_one_small` *(zero-copy)*  | `1.6041 µs` (1604 ns) | `105.12 ns`           | **-93.4%**              | **15.3x**       |
+| `bench_parse_str_one_realistic` *(0-copy)* | `7.1128 µs` (7113 ns) | `525.04 ns`           | **-92.6%**              | **13.5x**       |
+| `bench_parse_schema_defs`                  | `10.431 µs`           | `4.1312 µs`           | **-60.4%**              | **2.5x**        |
+| `bench_parse_batch_20`                     | `145.29 µs`           | `58.040 µs`           | **-60.1%**              | **2.5x**        |
+| `bench_stream_parser_chunked_32b`          | `33.388 µs`           | `3.1078 µs`           | **-90.7%**              | **10.7x**       |
+| `bench_expr_to_string`                     | `2.8853 µs` (2885 ns) | `339.81 ns`           | **-88.2%**              | **8.5x**        |
+| `bench_raw_data_from_str`                  | `4.1091 µs` (4109 ns) | `1.2597 µs` (1260 ns) | **-69.3%**              | **3.3x**        |
+| `bench_raw_data_to_string`                 | `3.6099 µs` (3610 ns) | `487.54 ns`           | **-86.5%**              | **7.4x**        |
+| `bench_serializer_to_str`                  | `29.973 µs` (29973 ns)| `279.71 ns`           | **-99.1%**              | **107.2x**      |
+| `bench_deserializer_from_str`              | `21.701 µs` (21701 ns)| `378.46 ns`           | **-98.3%**              | **57.3x**       |

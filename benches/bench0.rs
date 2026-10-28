@@ -77,36 +77,30 @@ fn bench_parse_realistic_reused_parser(c: &mut Criterion) {
     });
 }
 
-fn bench_parse_str_small(c: &mut Criterion) {
-    let mut parser = Parser::new();
-    c.bench_function("bench_parse_str_small", |b| {
-        b.iter(|| {
-            parser.parse_str(black_box(SMALL_RPC)).unwrap();
-            black_box(parser.pop_expr())
-        })
-    });
-}
-
-fn bench_parse_str_realistic(c: &mut Criterion) {
-    let mut parser = Parser::new();
-    c.bench_function("bench_parse_str_realistic", |b| {
-        b.iter(|| {
-            parser.parse_str(black_box(REALISTIC_RPC)).unwrap();
-            black_box(parser.pop_expr())
-        })
-    });
-}
-
-fn bench_parse_borrowed_small(c: &mut Criterion) {
+fn bench_parse_str_all_small(c: &mut Criterion) {
     let parser = Parser::new();
-    c.bench_function("bench_parse_borrowed_small", |b| {
+    c.bench_function("bench_parse_str_all_small", |b| {
+        b.iter(|| black_box(parser.parse_str_all(black_box(SMALL_RPC)).unwrap()))
+    });
+}
+
+fn bench_parse_str_all_realistic(c: &mut Criterion) {
+    let parser = Parser::new();
+    c.bench_function("bench_parse_str_all_realistic", |b| {
+        b.iter(|| black_box(parser.parse_str_all(black_box(REALISTIC_RPC)).unwrap()))
+    });
+}
+
+fn bench_parse_str_one_small(c: &mut Criterion) {
+    let parser = Parser::new();
+    c.bench_function("bench_parse_str_one_small", |b| {
         b.iter(|| black_box(parser.parse_str_one(black_box(SMALL_RPC)).unwrap()))
     });
 }
 
-fn bench_parse_borrowed_realistic(c: &mut Criterion) {
+fn bench_parse_str_one_realistic(c: &mut Criterion) {
     let parser = Parser::new();
-    c.bench_function("bench_parse_borrowed_realistic", |b| {
+    c.bench_function("bench_parse_str_one_realistic", |b| {
         b.iter(|| black_box(parser.parse_str_one(black_box(REALISTIC_RPC)).unwrap()))
     });
 }
@@ -118,10 +112,10 @@ criterion_group!(
     bench_tokenize_realistic,
     bench_parse_realistic_new_parser,
     bench_parse_realistic_reused_parser,
-    bench_parse_str_small,
-    bench_parse_str_realistic,
-    bench_parse_borrowed_small,
-    bench_parse_borrowed_realistic,
+    bench_parse_str_all_small,
+    bench_parse_str_all_realistic,
+    bench_parse_str_one_small,
+    bench_parse_str_one_realistic,
 );
 
 criterion_main!(bench_core);

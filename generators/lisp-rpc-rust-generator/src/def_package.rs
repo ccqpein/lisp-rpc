@@ -89,14 +89,14 @@ impl DefPkg {
 
     /// Parses a [`DefPkg`] declaration from a string slice.
     pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
-        let mut p = match parser {
+        let p = match parser {
             Some(p) => p,
             None => Default::default(),
         };
 
-        p.parse_str(source)?;
+        let exprs = p.parse_str_all(source)?;
 
-        Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
+        Self::from_expr(exprs.last().context("Cannot get the last expr")?)
     }
 
     /// Generates `Cargo.toml` manifest code using template files from disk.

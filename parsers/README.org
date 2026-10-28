@@ -17,6 +17,8 @@ Core tokenizer, zero-copy S-expression parser, and asynchronous streaming parser
   - ~tokenize(reader)~ / ~parse()~: Stateful tokenizer-based parsing from ~std::io::Read~.
 - ~StreamParser~: Asynchronous ~futures_core::Stream~ adapter that yields parsed ~Expr<'static>~ items from chunked byte streams without framing headers.
 - ~Expr<'a>~: Core S-expression AST enum (~Atom~, ~List~, ~Quote~, ~Comment~).
+  - ~write_to(&mut buf)~ / ~to_string()~: Single-buffer S-expression formatting.
+  - ~into_owned()~: Converts borrowed ~Expr<'a>~ into ~Expr<'static>~.
 - ~TypeValue<'a>~: Primitive value types (~Symbol~, ~String~, ~Keyword~, ~Number~) using ~Cow<'a, str>~ for zero-copy slice borrowing.
 - ~TypeValueNumber~: Numeric literals (~Int(i64)~, ~Float(f64)~).
 

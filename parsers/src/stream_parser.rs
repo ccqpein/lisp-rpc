@@ -79,17 +79,10 @@ where
                     if bytes.is_empty() {
                         continue;
                     }
-                    let was_waiting_on_list = !this.p.byte_cache.is_empty()
-                        && this.p.tokens.is_empty()
-                        && this.p.is_waiting_on_list();
                     if this.p.byte_cache.capacity() == 0 {
                         this.p.byte_cache.reserve(bytes.len().max(512));
                     }
                     this.p.byte_cache.extend_from_slice(bytes);
-
-                    if was_waiting_on_list && !bytes.contains(&b')') {
-                        continue;
-                    }
 
                     if let Err(e) = this.p.parse_stream_cache(false) {
                         return Poll::Ready(Some(Err(e)));

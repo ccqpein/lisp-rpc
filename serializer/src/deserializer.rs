@@ -69,14 +69,6 @@ impl<'de> LispRPCDeserializer<'de> {
         }
     }
 
-    fn normalize_variant(&self, ident: &str) -> String {
-        if !ident.contains('-') && ident.chars().nth(0).unwrap_or('a').is_uppercase() {
-            ident.to_string()
-        } else {
-            ident.to_case(Case::Pascal)
-        }
-    }
-
     #[inline]
     fn visit_normalized_variant<V>(
         &self,
@@ -119,7 +111,7 @@ impl<'de> LispRPCDeserializer<'de> {
                 }
             }
         }
-        visitor.visit_string(self.normalize_variant(ident))
+        visitor.visit_string(ident.to_case(Case::Pascal))
     }
 }
 

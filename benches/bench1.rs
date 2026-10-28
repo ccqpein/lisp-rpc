@@ -184,10 +184,7 @@ const SERIALIZER_RPC: &str = r#"(search-products :query "mechanical keyboard" :c
 fn bench_raw_data_from_str(c: &mut Criterion) {
     let mut parser = Parser::new().config_read_number(true);
     c.bench_function("bench_raw_data_from_str", |b| {
-        b.iter(|| {
-            parser.clear().unwrap();
-            black_box(Data::from_str(&mut parser, black_box(REALISTIC_RPC)).unwrap())
-        })
+        b.iter(|| black_box(Data::from_str(&mut parser, black_box(REALISTIC_RPC)).unwrap()))
     });
 }
 
