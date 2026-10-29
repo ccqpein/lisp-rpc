@@ -1,6 +1,9 @@
-* README
+#+TITLE: Lisp-RPC Rust Generator
 
-The generator for generating Rust code from Lisp-RPC protocol files.
+[[https://crates.io/crates/lisp-rpc-rust-generator][https://img.shields.io/crates/v/lisp-rpc-rust-generator.svg]]
+[[https://docs.rs/lisp-rpc-rust-generator][https://docs.rs/lisp-rpc-rust-generator/badge.svg]]
+
+Command-line application for generating Rust code from Lisp-RPC protocol files.
 
 ** Project Structure
 

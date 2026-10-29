@@ -9,8 +9,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_util::io::ReaderStream;
 
 /// Helper to wrap a string as [`Data::Value`].
-fn str_data(s: &str) -> Data {
-    Data::Value(TypeValue::String(s.to_string()))
+fn str_data(s: &str) -> Data<'static> {
+    Data::Value(TypeValue::String(s.to_string().into()))
 }
 
 /// Handles an incoming TCP connection by wrapping its read half with `RawDataGenerator`.

@@ -1,7 +1,6 @@
 //! Parser and code generation handler for `def-rpc` schema declarations.
 
 use lisp_rpc_rust_parser::Parser;
-use std::io::Cursor;
 
 use std::error::Error;
 
@@ -31,7 +30,7 @@ impl Error for DefRPCError {}
 
 /// Represents a parsed `(def-rpc name '(:key type ...) 'return-type)` declaration.
 #[derive(Debug, Eq, PartialEq)]
-pub struct DefRPC {
+pub struct DefRPC<'a> {
     /// The RPC command name identifier.
     pub rpc_name: String,
 
@@ -39,28 +38,29 @@ pub struct DefRPC {
     pub doc: Option<String>,
 
     /// Keyword-type argument pairs for the RPC request.
-    pub args: Vec<Expr>,
+    pub args: Vec<Expr<'a>>,
 
     /// Optional return type identifier.
     pub return_type: Option<String>,
 }
 
-impl DefRPC {
+impl<'a> DefRPC<'a> {
     /// Parses a [`DefRPC`] declaration from a string slice.
-    pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
-        let mut p = match parser {
+    pub fn from_str(source: &'a str, parser: Option<Parser>) -> Result<Self> {
+        let p = match parser {
             Some(p) => p,
             None => Default::default(),
         };
 
-        p.tokenize(Cursor::new(source))?;
-        p.parse_one()?;
+        let expr = p
+            .parse_str_one(source)?
+            .context("Cannot get the last expr")?;
 
-        Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
+        Self::from_expr(&expr)
     }
 
     /// Returns `true` if the expression is a `def-rpc` list expression.
-    pub fn if_def_rpc_expr(expr: &Expr) -> bool {
+    pub fn if_def_rpc_expr(expr: &Expr<'_>) -> bool {
         match &expr {
             Expr::List(e) => match &e[0] {
                 Expr::Atom(Atom {
@@ -74,8 +74,8 @@ impl DefRPC {
     }
 
     /// Parses a [`DefRPC`] declaration from an [`Expr`].
-    pub fn from_expr(expr: &Expr) -> Result<Self> {
-        let rest_expr: &[Expr];
+    pub fn from_expr(expr: &Expr<'a>) -> Result<Self> {
+        let rest_expr: &[Expr<'a>];
 
         if Self::if_def_rpc_expr(expr) {
             match &expr {
@@ -179,8 +179,8 @@ impl DefRPC {
                     })),
                 ) => {
                     fields.push(GeneratedField::new(
-                        kebab_to_snake_case(f),
-                        type_translate(t),
+                        kebab_to_snake_case(&f),
+                        type_translate(&t),
                         None,
                     )?);
                 }
@@ -201,14 +201,14 @@ impl DefRPC {
                             }),
                             _,
                         ) => {
-                            let new_msg_name = self.rpc_name.to_string() + "-" + f;
+                            let new_msg_name = self.rpc_name.to_string() + "-" + &f;
                             res.append(
-                                &mut DefMsg::new(&new_msg_name, inner_exprs, RPCDataType::Map)?
+                                &mut DefMsg::new(&new_msg_name, &inner_exprs, RPCDataType::Map)?
                                     .create_gen_structs()?,
                             );
 
                             fields.push(GeneratedField::new(
-                                kebab_to_snake_case(f),
+                                kebab_to_snake_case(&f),
                                 type_translate(&new_msg_name),
                                 None,
                             )?);
@@ -222,9 +222,9 @@ impl DefRPC {
                                 value: TypeValue::Symbol(t),
                             })),
                         ) if l == "list" => {
-                            let new_type_name = format!("Vec<{}>", type_translate(t));
+                            let new_type_name = format!("Vec<{}>", type_translate(&t));
                             fields.push(GeneratedField::new(
-                                kebab_to_snake_case(f),
+                                kebab_to_snake_case(&f),
                                 new_type_name,
                                 None,
                             )?);
@@ -238,9 +238,9 @@ impl DefRPC {
                                 value: TypeValue::Symbol(t),
                             })),
                         ) if o == "optional" => {
-                            let new_type_name = format!("Option<{}>", type_translate(t));
+                            let new_type_name = format!("Option<{}>", type_translate(&t));
                             fields.push(GeneratedField::new(
-                                kebab_to_snake_case(f),
+                                kebab_to_snake_case(&f),
                                 new_type_name,
                                 None,
                             )?);
@@ -302,7 +302,7 @@ impl DefRPC {
     }
 }
 
-impl RPCSpec for DefRPC {
+impl<'a> RPCSpec for DefRPC<'a> {
     fn as_lib(&self) -> Option<&dyn RPCSpecLib> {
         Some(self)
     }
@@ -316,13 +316,13 @@ impl RPCSpec for DefRPC {
     }
 }
 
-impl RPCSpecLib for DefRPC {
+impl<'a> RPCSpecLib for DefRPC<'a> {
     fn generate_structs(&self) -> Result<Vec<GeneratedStruct>> {
         self.create_gen_structs()
     }
 }
 
-fn de_quoted(e: &Expr) -> &Expr {
+fn de_quoted<'e, 'a>(e: &'e Expr<'a>) -> &'e Expr<'a> {
     match e {
         Expr::Quote(expr) => de_quoted(expr),
         _ => e,

@@ -1,7 +1,7 @@
 //! File-level utilities for reading and parsing Lisp-RPC data files.
 
 use anyhow::{Context, Result};
-use std::{collections::HashMap, fs::File, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{Data, ExprData};
 
@@ -9,35 +9,38 @@ use crate::{Data, ExprData};
 #[derive(Default, Debug)]
 pub struct DataFile {
     /// All data records in this file.
-    datas: Vec<ExprData>,
+    datas: Vec<ExprData<'static>>,
 }
 
 impl DataFile {
     /// Parses all S-expression data records from the specified file path.
     pub fn new(file: PathBuf) -> Result<Self> {
-        let file = File::open(&file)
+        let content = std::fs::read_to_string(&file)
             .map_err(|e| anyhow::anyhow!("Failed to open config file at {:?}: {}", file, e))?;
 
-        let mut parser: lisp_rpc_rust_parser::Parser = Default::default();
+        let parser: lisp_rpc_rust_parser::Parser = Default::default();
+        let exprs = parser.parse_str_all(&content)?;
 
-        parser.tokenize(file)?;
-        parser.parse()?;
+        let mut df = DataFile {
+            datas: Vec::with_capacity(exprs.len()),
+        };
 
-        let mut df: DataFile = Default::default();
-
-        for e in parser.iter_expr() {
+        for e in &exprs {
+            if e.is_comment() {
+                continue;
+            }
             let Data::Data(d) = Data::from_expr(e).context("Generate Data failed")? else {
                 anyhow::bail!("File can only contains the expr data")
             };
 
-            df.datas.push(d);
+            df.datas.push(d.into_owned());
         }
 
         Ok(df)
     }
 
     /// Generates a map indexing each [`ExprData`] record by its name identifier.
-    pub fn gen_table(&self) -> HashMap<String, &ExprData> {
+    pub fn gen_table(&self) -> HashMap<String, &ExprData<'static>> {
         self.datas
             .iter()
             .map(|e| (e.get_name().to_string(), e))
@@ -45,25 +48,25 @@ impl DataFile {
     }
 
     /// Returns an iterator over references to the data records in this file.
-    pub fn iter(&self) -> impl Iterator<Item = &ExprData> {
+    pub fn iter(&self) -> impl Iterator<Item = &ExprData<'static>> {
         self.into_iter()
     }
 }
 
 impl<'e> IntoIterator for &'e DataFile {
-    type Item = &'e ExprData;
+    type Item = &'e ExprData<'static>;
 
-    type IntoIter = std::slice::Iter<'e, ExprData>;
+    type IntoIter = std::slice::Iter<'e, ExprData<'static>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.datas.iter()
     }
 }
 
-impl<'e> IntoIterator for DataFile {
-    type Item = ExprData;
+impl IntoIterator for DataFile {
+    type Item = ExprData<'static>;
 
-    type IntoIter = std::vec::IntoIter<ExprData>;
+    type IntoIter = std::vec::IntoIter<ExprData<'static>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.datas.into_iter()

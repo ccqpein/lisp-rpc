@@ -1,0 +1,41 @@
+# Lisp-RPC Rust Parser
+
+[![crates.io](https://img.shields.io/crates/v/lisp-rpc-rust-parser.svg)](https://crates.io/crates/lisp-rpc-rust-parser)
+[![docs.rs](https://docs.rs/lisp-rpc-rust-parser/badge.svg)](https://docs.rs/lisp-rpc-rust-parser)
+
+Core tokenizer, zero-copy S-expression parser, and asynchronous streaming parser for Lisp-RPC.
+
+## Overview
+
+`lisp-rpc-rust-parser` parses Lisp-RPC S-expression syntax into an AST. It supports high-performance zero-copy parsing directly from string slices (`&'a str`), tokenized streaming from arbitrary `std::io::Read` sources, and asynchronous chunked stream parsing (`StreamParser`).
+
+## Key Types & APIs
+
+- `Parser`: Main parser engine.
+  - `parse_str_one(s)`: Zero-copy parse of the first complete S-expression into `Expr<'a>`.
+  - `parse_str_all(s)`: Zero-copy parse of all S-expressions in `s` into `Vec<Expr<'a>>`.
+  - `tokenize(reader)` / `parse()`: Stateful tokenizer-based parsing from `std::io::Read`.
+- `StreamParser`: Asynchronous `futures_core::Stream` adapter that yields parsed `Expr<'static>` items from chunked byte streams without framing headers.
+- `Expr<'a>`: Core S-expression AST enum (`Atom`, `List`, `Quote`, `Comment`).
+  - `write_to(&mut buf)` / `to_string()`: Single-buffer S-expression formatting.
+  - `into_owned()`: Converts borrowed `Expr<'a>` into `Expr<'static>`.
+- `TypeValue<'a>`: Primitive value types (`Symbol`, `String`, `Keyword`, `Number`) using `Cow<'a, str>` for zero-copy slice borrowing.
+- `TypeValueNumber`: Numeric literals (`Int(i64)`, `Float(f64)`).
+
+## Usage Example
+
+```rust
+use lisp_rpc_rust_parser::{Parser, Expr, TypeValue};
+
+let parser = Parser::new();
+let input = r#"(get-book :title "The Hobbit" :year 1937)"#;
+
+// Zero-copy parse of the first S-expression
+if let Some(expr) = parser.parse_str_one(input).unwrap() {
+    println!("Parsed expression: {}", expr.to_string());
+}
+
+// Parse all S-expressions in an input string slice
+let exprs = parser.parse_str_all(input).unwrap();
+assert_eq!(exprs.len(), 1);
+```

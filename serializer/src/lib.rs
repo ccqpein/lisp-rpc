@@ -11,13 +11,11 @@ pub use serializer::*;
 
 /// Serializes a value into a Lisp-RPC S-expression string.
 pub fn lisp_rpc_to_str(v: impl Serialize) -> Result<String> {
-    let mut buf = Vec::with_capacity(1024);
+    let mut buf = Vec::with_capacity(256);
+    let pos = lisp_rpc_to_buf(v, &mut buf)?;
+    buf.truncate(pos);
 
-    let mut _s = serializer::LispRPCSerializer::new(&mut buf);
-    v.serialize(&mut _s)?;
-    let pos = _s.pos;
-
-    Ok(String::from_utf8(buf[..pos].to_vec())?)
+    Ok(String::from_utf8(buf)?)
 }
 
 /// Serializes a value into a byte buffer in Lisp-RPC format, returning the number of bytes written.

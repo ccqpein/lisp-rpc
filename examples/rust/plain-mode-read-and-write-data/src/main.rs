@@ -54,9 +54,10 @@ fn main() {
     let _ = client_request_data.get("bb");
 
     // server side for some reason want to format str to send data
+    let response_str = format!("(response :args '(1 2) :result {})", version_v + aa_v);
     let server_response_data = Data::from_str(
         &mut Parser::new().config_read_number(true),
-        &format!("(response :args '(1 2) :result {})", version_v + aa_v),
+        &response_str,
     )
     .unwrap();
 
@@ -69,7 +70,8 @@ fn main() {
     );
 
     // client get the response
-    let response_client_get = Data::from_root_str(&server_response_data.to_string(), None).unwrap();
+    let server_response_str = server_response_data.to_string();
+    let response_client_get = Data::from_root_str(&server_response_str, None).unwrap();
     println!(
         "response is:\n{:?}\n\nraw string data is\n{}\n\nresult is\n{:?}\n",
         response_client_get,

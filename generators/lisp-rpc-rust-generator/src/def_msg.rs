@@ -29,22 +29,22 @@ impl Error for DefMsgError {}
 
 /// Represents a parsed `(def-msg name :key type ...)` specification declaration.
 #[derive(Debug, Eq, PartialEq)]
-pub struct DefMsg {
+pub struct DefMsg<'a> {
     msg_name: String,
 
     /// the doc of this msg
     doc: Option<String>,
 
     /// the keywords and their types pairs
-    rest_expr: Vec<Expr>,
+    rest_expr: Vec<Expr<'a>>,
 
     /// anonymous msg can be the map
     msg_ty: RPCDataType,
 }
 
-impl DefMsg {
+impl<'a> DefMsg<'a> {
     /// Creates a new [`DefMsg`] specification item.
-    pub fn new(msg_name: &str, rest_expr: &[Expr], ty: RPCDataType) -> Result<Self> {
+    pub fn new(msg_name: &str, rest_expr: &[Expr<'a>], ty: RPCDataType) -> Result<Self> {
         let (doc, rest) = match rest_expr.first() {
             Some(Expr::Atom(Atom {
                 value: TypeValue::String(doc),
@@ -75,22 +75,21 @@ impl DefMsg {
     }
 
     /// Parses a [`DefMsg`] declaration from a string slice.
-    pub fn from_str(source: &str, parser: Option<Parser>) -> Result<Self> {
-        use std::io::Cursor;
-
-        let mut p = match parser {
+    pub fn from_str(source: &'a str, parser: Option<Parser>) -> Result<Self> {
+        let p = match parser {
             Some(p) => p,
             None => Default::default(),
         };
 
-        p.tokenize(Cursor::new(source))?;
-        p.parse_one()?;
+        let expr = p
+            .parse_str_one(source)?
+            .context("Cannot get the last expr")?;
 
-        Self::from_expr(p.iter_expr().last().context("Cannot get the last expr")?)
+        Self::from_expr(&expr)
     }
 
     /// Returns `true` if the expression is a `def-msg` list expression.
-    pub fn if_def_msg_expr(expr: &Expr) -> bool {
+    pub fn if_def_msg_expr(expr: &Expr<'_>) -> bool {
         match &expr {
             Expr::List(e) => match &e[0] {
                 Expr::Atom(Atom {
@@ -104,8 +103,8 @@ impl DefMsg {
     }
 
     /// Parses a [`DefMsg`] declaration from an [`Expr`].
-    pub fn from_expr(expr: &Expr) -> Result<Self> {
-        let rest_expr: &[Expr];
+    pub fn from_expr(expr: &Expr<'a>) -> Result<Self> {
+        let rest_expr: &[Expr<'a>];
         if Self::if_def_msg_expr(expr) {
             match &expr {
                 Expr::List(e) => rest_expr = &e[1..],
@@ -127,7 +126,7 @@ impl DefMsg {
             Expr::Atom(Atom {
                 value: TypeValue::Symbol(s),
                 ..
-            }) => s,
+            }) => s.as_ref(),
             _ => {
                 anyhow::bail!(DefMsgError {
                     msg: "parsing failed, msg name should be symbol".to_string(),
@@ -154,8 +153,8 @@ impl DefMsg {
                     })),
                 ) => {
                     fields.push(GeneratedField::new(
-                        kebab_to_snake_case(f),
-                        type_translate(t),
+                        kebab_to_snake_case(&f),
+                        type_translate(&t),
                         None,
                     )?);
                 }
@@ -176,13 +175,13 @@ impl DefMsg {
                             }),
                             _,
                         ) => {
-                            let new_msg_name = self.msg_name.to_string() + "-" + f;
+                            let new_msg_name = self.msg_name.to_string() + "-" + &f;
                             res.append(
                                 &mut Self::new(&new_msg_name, inner_exprs, RPCDataType::Map)?
                                     .create_gen_structs()?,
                             );
                             fields.push(GeneratedField::new(
-                                kebab_to_snake_case(f),
+                                kebab_to_snake_case(&f),
                                 type_translate(&new_msg_name),
                                 None,
                             )?);
@@ -196,9 +195,9 @@ impl DefMsg {
                                 value: TypeValue::Symbol(t),
                             })),
                         ) if l == "list" => {
-                            let new_type_name = format!("Vec<{}>", type_translate(t));
+                            let new_type_name = format!("Vec<{}>", type_translate(&t));
                             fields.push(GeneratedField::new(
-                                kebab_to_snake_case(f),
+                                kebab_to_snake_case(&f),
                                 new_type_name,
                                 None,
                             )?);
@@ -212,9 +211,9 @@ impl DefMsg {
                                 value: TypeValue::Symbol(t),
                             })),
                         ) if o == "optional" => {
-                            let new_type_name = format!("Option<{}>", type_translate(t));
+                            let new_type_name = format!("Option<{}>", type_translate(&t));
                             fields.push(GeneratedField::new(
-                                kebab_to_snake_case(f),
+                                kebab_to_snake_case(&f),
                                 new_type_name,
                                 None,
                             )?);
@@ -276,7 +275,7 @@ impl DefMsg {
     }
 }
 
-impl RPCSpec for DefMsg {
+impl<'a> RPCSpec for DefMsg<'a> {
     fn as_lib(&self) -> Option<&dyn RPCSpecLib> {
         Some(self)
     }
@@ -290,7 +289,7 @@ impl RPCSpec for DefMsg {
     }
 }
 
-impl RPCSpecLib for DefMsg {
+impl<'a> RPCSpecLib for DefMsg<'a> {
     fn generate_structs(&self) -> Result<Vec<GeneratedStruct>> {
         self.create_gen_structs()
     }

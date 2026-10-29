@@ -4,7 +4,10 @@ use std::{
     collections::HashSet,
     error::Error as StdError,
     fmt::{self, Display},
-    sync::{LazyLock, RwLock},
+    sync::{
+        LazyLock, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use serde::ser::{
@@ -14,6 +17,9 @@ use serde::ser::{
 
 use convert_case::{Case, Casing};
 
+/// Fast atomic flag indicating whether any global map types are currently registered.
+static HAS_GLOBAL_MAP_TYPES: AtomicBool = AtomicBool::new(false);
+
 /// Global registry of struct names that should be serialized in map style `'(:key value)`.
 pub static GLOBAL_MAP_TYPES: LazyLock<RwLock<HashSet<&'static str>>> =
     LazyLock::new(|| RwLock::new(HashSet::new()));
@@ -22,6 +28,7 @@ pub static GLOBAL_MAP_TYPES: LazyLock<RwLock<HashSet<&'static str>>> =
 pub fn register_global_map_type(name: &'static str) {
     if let Ok(mut map) = GLOBAL_MAP_TYPES.write() {
         map.insert(name);
+        HAS_GLOBAL_MAP_TYPES.store(true, Ordering::Release);
     }
 }
 
@@ -29,6 +36,7 @@ pub fn register_global_map_type(name: &'static str) {
 pub fn clear_global_map_types() {
     if let Ok(mut map) = GLOBAL_MAP_TYPES.write() {
         map.clear();
+        HAS_GLOBAL_MAP_TYPES.store(false, Ordering::Release);
     }
 }
 
@@ -111,10 +119,120 @@ impl<'s> LispRPCSerializer<'s> {
         self.map_types.insert(name);
     }
 
+    #[inline]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), LispRPCSerializerError> {
         self.output.extend_from_slice(bytes);
         self.pos += bytes.len();
         Ok(())
+    }
+
+    #[inline]
+    fn write_u64(&mut self, mut n: u64) -> Result<(), LispRPCSerializerError> {
+        if n < 10 {
+            let b = [b'0' + n as u8];
+            return self.write_bytes(&b);
+        }
+        let mut tmp = [0u8; 20];
+        let mut i = 20;
+        while n > 0 {
+            i -= 1;
+            tmp[i] = b'0' + (n % 10) as u8;
+            n /= 10;
+        }
+        self.write_bytes(&tmp[i..])
+    }
+
+    #[inline]
+    fn write_i64(&mut self, n: i64) -> Result<(), LispRPCSerializerError> {
+        if n < 0 {
+            self.write_bytes(b"-")?;
+            self.write_u64(n.wrapping_neg() as u64)
+        } else {
+            self.write_u64(n as u64)
+        }
+    }
+
+    /// Writes a field key in kebab-case without heap allocation when `key` is standard ASCII snake_case.
+    #[inline]
+    fn write_kebab_field(&mut self, key: &str) -> Result<(), LispRPCSerializerError> {
+        let bytes = key.as_bytes();
+        if !bytes.is_empty() {
+            let mut has_underscore = false;
+            let mut simple_snake = true;
+            let mut prev_underscore = false;
+            for (i, &b) in bytes.iter().enumerate() {
+                if b == b'_' {
+                    if i == 0 || i + 1 == bytes.len() || prev_underscore {
+                        simple_snake = false;
+                        break;
+                    }
+                    has_underscore = true;
+                    prev_underscore = true;
+                } else if b.is_ascii_lowercase() {
+                    prev_underscore = false;
+                } else {
+                    simple_snake = false;
+                    break;
+                }
+            }
+            if simple_snake {
+                if !has_underscore {
+                    return self.write_bytes(bytes);
+                }
+                self.output.reserve(bytes.len());
+                for &b in bytes {
+                    self.output.push(if b == b'_' { b'-' } else { b });
+                }
+                self.pos += bytes.len();
+                return Ok(());
+            }
+        }
+        self.write_bytes(key.to_case(Case::Kebab).as_bytes())
+    }
+
+    /// Writes a struct name in kebab-case without heap allocation when `name` is standard ASCII PascalCase.
+    #[inline]
+    fn write_kebab_struct_name(&mut self, name: &str) -> Result<(), LispRPCSerializerError> {
+        let bytes = name.as_bytes();
+        if !bytes.is_empty() {
+            let mut simple_pascal = true;
+            let mut prev_upper = false;
+            let mut upper_count = 0usize;
+            for (i, &b) in bytes.iter().enumerate() {
+                if b.is_ascii_uppercase() {
+                    if prev_upper {
+                        simple_pascal = false;
+                        break;
+                    }
+                    if i > 0 {
+                        upper_count += 1;
+                    }
+                    prev_upper = true;
+                } else if b.is_ascii_lowercase() {
+                    prev_upper = false;
+                } else {
+                    simple_pascal = false;
+                    break;
+                }
+            }
+            if simple_pascal {
+                let added_len = bytes.len() + upper_count;
+                self.output.reserve(added_len);
+                for (i, &b) in bytes.iter().enumerate() {
+                    if b.is_ascii_uppercase() {
+                        if i > 0 {
+                            self.output.push(b'-');
+                        }
+                        self.output.push(b.to_ascii_lowercase());
+                    } else {
+                        self.output.push(b);
+                    }
+                }
+                self.pos += added_len;
+                return Ok(());
+            }
+        }
+        self.write_bytes(name.to_case(Case::Kebab).as_bytes())
     }
 }
 
@@ -245,7 +363,7 @@ impl<'a, 's: 'a> SerializeStruct for &'a mut LispRPCSerializer<'s> {
             self.write_bytes(b" ")?;
         }
         self.write_bytes(b":")?;
-        self.write_bytes(key.to_case(Case::Kebab).as_bytes())?;
+        self.write_kebab_field(key)?;
         self.write_bytes(b" ")?;
 
         value.serialize(&mut **self)?;
@@ -296,7 +414,7 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
     }
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        self.write_bytes(v.to_string().as_bytes())
+        self.write_i64(v)
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
@@ -312,7 +430,7 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        self.write_bytes(v.to_string().as_bytes())
+        self.write_u64(v)
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
@@ -324,7 +442,8 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
     }
 
     fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
-        self.serialize_str(&v.to_string())
+        let mut tmp = [0u8; 4];
+        self.serialize_str(v.encode_utf8(&mut tmp))
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
@@ -426,11 +545,12 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
         name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        let is_map = self.map_types.contains(name)
-            || GLOBAL_MAP_TYPES
-                .read()
-                .map(|map| map.contains(name))
-                .unwrap_or(false);
+        let is_map = (!self.map_types.is_empty() && self.map_types.contains(name))
+            || (HAS_GLOBAL_MAP_TYPES.load(Ordering::Acquire)
+                && GLOBAL_MAP_TYPES
+                    .read()
+                    .map(|map| map.contains(name))
+                    .unwrap_or(false));
 
         let style = if is_map {
             LispRPCStyle::Map
@@ -441,7 +561,7 @@ impl<'a, 's: 'a> Serializer for &'a mut LispRPCSerializer<'s> {
         match style {
             LispRPCStyle::Struct => {
                 self.write_bytes(b"(")?;
-                self.write_bytes(name.to_case(Case::Kebab).as_bytes())?;
+                self.write_kebab_struct_name(name)?;
             }
             LispRPCStyle::Map => {
                 self.write_bytes(b"'(")?;

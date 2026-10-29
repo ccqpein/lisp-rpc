@@ -38,7 +38,7 @@ where
     B: AsRef<[u8]>,
     E: std::fmt::Display,
 {
-    type Item = Result<Data, anyhow::Error>;
+    type Item = Result<Data<'static>, anyhow::Error>;
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.p.size_hint()
