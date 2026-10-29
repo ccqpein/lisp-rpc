@@ -1,0 +1,43 @@
+# Lisp-RPC Rust Serializer
+
+[![crates.io](https://img.shields.io/crates/v/lisp-rpc-rust-serializer.svg)](https://crates.io/crates/lisp-rpc-rust-serializer)
+[![docs.rs](https://docs.rs/lisp-rpc-rust-serializer/badge.svg)](https://docs.rs/lisp-rpc-rust-serializer)
+
+Serde-based serialization and deserialization for Lisp-RPC S-expressions.
+
+## Overview
+
+`lisp-rpc-rust-serializer` provides `serde::Serializer` and `serde::Deserializer` implementations that convert typed Rust structs, enums, sequences, and maps directly to and from Lisp-RPC S-expression format without an intermediate AST.
+
+## Key Types & APIs
+
+- `lisp_rpc_to_str(v)`: Serializes any `serde::Serialize` type into a Lisp-RPC S-expression `String`.
+- `lisp_rpc_to_buf(v, buffer)`: Serializes any `serde::Serialize` type directly into a `Vec<u8>` buffer.
+- `lisp_rpc_from_str(s)`: Deserializes any `serde::Deserialize` type from a Lisp-RPC S-expression `&str`.
+- `LispRPCSerializer` / `LispRPCDeserializer`: Underlying Serde serializer and deserializer engines.
+- `register_global_map_type(name)` / `clear_global_map_types()`: Configure specific struct names to serialize as quoted anonymous maps `'(:field value ...)` instead of named structs `(name :field value ...)`.
+
+## Usage Example
+
+```rust
+use lisp_rpc_rust_serializer::{lisp_rpc_from_str, lisp_rpc_to_str};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct BookInfo {
+    title: String,
+    year: i32,
+}
+
+// Serialize a Rust struct into a Lisp-RPC S-expression string
+let book = BookInfo {
+    title: "The Hobbit".to_string(),
+    year: 1937,
+};
+let s = lisp_rpc_to_str(&book).unwrap();
+assert_eq!(s, r#"(book-info :title "The Hobbit" :year 1937)"#);
+
+// Deserialize a Lisp-RPC S-expression string back into a Rust struct
+let decoded: BookInfo = lisp_rpc_from_str(&s).unwrap();
+assert_eq!(decoded, book);
+```

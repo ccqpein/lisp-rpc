@@ -1,4 +1,34 @@
 //! Serde-based serialization and deserialization for Lisp-RPC S-expressions.
+//!
+//! # Key Functions
+//!
+//! - [`lisp_rpc_to_str`]: Serializes any [`serde::Serialize`] type into a Lisp-RPC S-expression `String`.
+//! - [`lisp_rpc_to_buf`]: Serializes any [`serde::Serialize`] type directly into a `Vec<u8>` buffer.
+//! - [`lisp_rpc_from_str`]: Deserializes any [`serde::Deserialize`] type from a Lisp-RPC S-expression `&str`.
+//!
+//! # Quick Start
+//!
+//! ```rust
+//! use lisp_rpc_rust_serializer::{lisp_rpc_from_str, lisp_rpc_to_str};
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Debug, PartialEq, Serialize, Deserialize)]
+//! struct BookInfo {
+//!     title: String,
+//!     year: i32,
+//! }
+//!
+//! let book = BookInfo {
+//!     title: "The Hobbit".to_string(),
+//!     year: 1937,
+//! };
+//!
+//! let encoded = lisp_rpc_to_str(&book).unwrap();
+//! assert_eq!(encoded, r#"(book-info :title "The Hobbit" :year 1937)"#);
+//!
+//! let decoded: BookInfo = lisp_rpc_from_str(&encoded).unwrap();
+//! assert_eq!(decoded, book);
+//! ```
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};

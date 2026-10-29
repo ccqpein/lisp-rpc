@@ -2,18 +2,40 @@
 //!
 //! Named S-expression data structures take the form `(name :key1 val1 :key2 val2)`.
 //!
+//! # Key Types
+//!
+//! - [`Data<'a>`]: Root enum representing any dynamic Lisp-RPC element (`Data`, `List`, `Map`, `Value`, `Error`).
+//! - [`ExprData<'a>`]: Named S-expression data structure `(name :key value ...)`.
+//! - [`ListData<'a>`]: Quoted sequence `'("a" 1 2)`.
+//! - [`MapData<'a>`]: Quoted key-value map `'(:k1 v1 :k2 v2)`.
+//! - [`files::DataFile`]: Parses and indexes multiple [`ExprData`] records from a file.
+//! - [`RawDataGenerator`]: Asynchronous stream adapter transforming byte streams into [`Data<'static>`].
+//!
 //! # Quick Start
 //!
 //! ```rust
-//! use lisp_rpc_rust_parser::Parser;
-//! use lisp_rpc_rust_raw_data::{Data, FromStr};
+//! use lisp_rpc_rust_parser::{Parser, TypeValue};
+//! use lisp_rpc_rust_raw_data::{Data, FromStr, IntoData};
 //!
+//! // Parse a borrowed Data<'a> directly from a string slice
 //! let mut parser = Parser::new();
 //! let input = r#"(person :name "Alice" :age 30)"#;
-//!
 //! let data = Data::from_str(&mut parser, input).unwrap();
 //! assert_eq!(data.get("name").unwrap().get_string().unwrap(), "Alice");
 //! assert_eq!(data.get("age").unwrap().to_int(), Some(30));
+//!
+//! // Construct a new owned Data<'static> dynamically
+//! let name_val = Data::Value(TypeValue::String("Alice".into()));
+//! let built = Data::new(
+//!     "person",
+//!     [
+//!         ("name", &name_val as &dyn IntoData),
+//!         ("age", &30_i32 as &dyn IntoData),
+//!     ]
+//!     .into_iter(),
+//! )
+//! .unwrap();
+//! assert_eq!(built.to_string(), input);
 //! ```
 #![feature(iter_array_chunks)]
 

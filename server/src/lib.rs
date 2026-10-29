@@ -1,4 +1,37 @@
 //! Server implementation for Lisp-RPC, providing request dispatching and RPC type traits.
+//!
+//! # Key Types & Macros
+//!
+//! - [`RPCServer`]: Thread-safe RPC dispatch engine supporting synchronous ([`RPCServer::register`]) and asynchronous ([`RPCServer::register_async`]) handlers.
+//! - [`RPCType`]: Classifies types into [`RPCType::RPC`], [`RPCType::Msg`], [`RPCType::Map`], [`RPCType::List`], or [`RPCType::V`].
+//! - [`ToRPCType`] / [`ToRPCReturn`]: Traits linking Rust types to their Lisp-RPC wire classification and response type.
+//! - [`impl_to_rpc!`] / [`impl_to_rpc_return!`]: Macros to implement [`ToRPCType`] and [`ToRPCReturn`] for custom types.
+//!
+//! # Quick Start
+//!
+//! ```rust
+//! use lisp_rpc_rust_server::{
+//!     impl_to_rpc, impl_to_rpc_return, lisp_rpc_to_str, RPCServer, RPCType, ToRPCReturn, ToRPCType,
+//! };
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Debug, PartialEq, Serialize, Deserialize)]
+//! struct GetBook {
+//!     title: String,
+//! }
+//!
+//! impl_to_rpc!(GetBook, RPCType::RPC("get-book".to_string()));
+//! impl_to_rpc_return!(GetBook, String);
+//!
+//! let server = RPCServer::new()
+//!     .register::<GetBook, _>(|req: GetBook| {
+//!         Ok(format!("Found book: {}", req.title))
+//!     })
+//!     .unwrap();
+//!
+//! let resp = server.handle(r#"(get-book :title "The Hobbit")"#).unwrap();
+//! assert_eq!(resp, r#""Found book: The Hobbit""#);
+//! ```
 
 pub use lisp_rpc_rust_serializer::lisp_rpc_to_str;
 
