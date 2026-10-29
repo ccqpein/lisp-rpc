@@ -1,5 +1,16 @@
 //! Core tokenizer, zero-copy S-expression parser, and asynchronous stream parser for Lisp-RPC.
 //!
+//! # Key Types & APIs
+//!
+//! - [`Parser`]: Main parser engine supporting both zero-copy string slice parsing and stateful reader tokenization.
+//!   - [`Parser::parse_str_one`]: Zero-copy parse of the first complete S-expression from `&'a str` into [`Expr<'a>`].
+//!   - [`Parser::parse_str_all`]: Zero-copy parse of all S-expressions from `&'a str` into `Vec<Expr<'a>>`.
+//!   - [`Parser::tokenize`] / [`Parser::parse`] / [`Parser::parse_one`]: Incremental tokenizer-based parsing from [`std::io::Read`].
+//! - [`StreamParser`]: Asynchronous [`futures_core::Stream`] adapter yielding [`Expr<'static>`] items from chunked byte streams.
+//! - [`Expr<'a>`]: S-expression AST node (`Atom`, `List`, `Quote`, `Comment`) with [`Expr::write_to`] and [`Expr::into_owned`].
+//! - [`TypeValue<'a>`]: Primitive atom values (`Symbol`, `String`, `Keyword`, `Number`) backed by [`Cow<'a, str>`].
+//! - [`TypeValueNumber`]: Numeric literal (`Int(i64)`, `Float(f64)`).
+//!
 //! # Quick Start
 //!
 //! ```rust
@@ -11,6 +22,10 @@
 //! // Parse the first S-expression (borrowing string slices directly from `input`)
 //! let expr = parser.parse_str_one(input).unwrap().unwrap();
 //! assert_eq!(expr.to_string(), input);
+//!
+//! // Convert borrowed AST into `'static` owned AST if needed
+//! let owned_expr = expr.into_owned();
+//! assert_eq!(owned_expr.to_string(), input);
 //!
 //! // Parse all S-expressions in a string slice
 //! let exprs = parser.parse_str_all(input).unwrap();
@@ -787,6 +802,16 @@ impl Parser {
     }
 
     /// Parses all S-expressions from `input` into [`Expr<'a>`] nodes without allocating token strings.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use lisp_rpc_rust_parser::Parser;
+    ///
+    /// let parser = Parser::new();
+    /// let exprs = parser.parse_str_all("(a 1) (b 2)").unwrap();
+    /// assert_eq!(exprs.len(), 2);
+    /// ```
     pub fn parse_str_all<'a>(&self, input: &'a str) -> Result<Vec<Expr<'a>>, ParserError> {
         let mut sp = SliceParser::new(input, self.read_number_config, true);
         let mut out = Vec::with_capacity(4);
@@ -797,6 +822,16 @@ impl Parser {
     }
 
     /// Parses the first non-whitespace S-expression from `input` into an [`Expr<'a>`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use lisp_rpc_rust_parser::Parser;
+    ///
+    /// let parser = Parser::new();
+    /// let expr = parser.parse_str_one("(ping :id 42)").unwrap().unwrap();
+    /// assert_eq!(expr.to_string(), "(ping :id 42)");
+    /// ```
     pub fn parse_str_one<'a>(&self, input: &'a str) -> Result<Option<Expr<'a>>, ParserError> {
         let mut sp = SliceParser::new(input, self.read_number_config, true);
         sp.parse_first_expr()

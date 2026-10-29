@@ -11,22 +11,25 @@ Core raw data structures for dynamic, schema-free S-expression parsing and manip
 
 ## Key Types
 
-- `Data`: Root enum representing any valid Lisp-RPC data element (expressions, lists, maps, atoms/values).
-- `ExprData`: Named S-expression data structure: `(name :key value ...)`.
-- `ListData`: Quoted sequence: `'(1 2 "three")`.
-- `MapData`: Quoted key-value pairs: `'(:key value)`.
+- `Data<'a>`: Root enum representing any valid Lisp-RPC data element (expressions, lists, maps, atoms/values).
+- `ExprData<'a>`: Named S-expression data structure: `(name :key value ...)`.
+- `ListData<'a>`: Quoted sequence: `'(1 2 "three")`.
+- `MapData<'a>`: Quoted key-value pairs: `'(:key value)`.
 - `DataFile`: Parses and indexes multiple S-expression data records from a file.
+- `RawDataGenerator`: Asynchronous stream adapter converting byte streams into `Data<'static>`.
 
 ## Usage Example
 
 ```rust
-use lisp_rpc_rust_raw_data::{Data, GetAbleData, IntoData};
+use lisp_rpc_rust_parser::TypeValue;
+use lisp_rpc_rust_raw_data::{Data, IntoData};
 
 // Create a raw RPC data expression: (get-book :title "The Hobbit" :year 1937)
+let title = Data::Value(TypeValue::String("The Hobbit".into()));
 let rpc_data = Data::new(
     "get-book",
     [
-        ("title", &"The Hobbit" as &dyn IntoData),
+        ("title", &title as &dyn IntoData),
         ("year", &1937_i32 as &dyn IntoData),
     ].into_iter(),
 ).unwrap();
