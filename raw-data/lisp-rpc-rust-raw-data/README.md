@@ -15,29 +15,38 @@ Core raw data structures for dynamic, schema-free S-expression parsing and manip
 - `ExprData<'a>`: Named S-expression data structure: `(name :key value ...)`.
 - `ListData<'a>`: Quoted sequence: `'(1 2 "three")`.
 - `MapData<'a>`: Quoted key-value pairs: `'(:key value)`.
-- `DataFile`: Parses and indexes multiple S-expression data records from a file.
+- `DataFile`: Parses and indexes multiple `ExprData` records from a file or string (skipping `;` comments).
 - `RawDataGenerator`: Asynchronous stream adapter converting byte streams into `Data<'static>`.
+
+## Keyword Lookup & Typed Getters
+
+- **Keyword lookup rule**: Pass key names **without** a leading colon (`data.get("port")`, **not** `data.get(":port")`).
+- **Tag inspection**: `data.name()` returns `Some("server-config")` for `(server-config :port 3000)`.
+- **Value extractors on `Data`**: `as_str()`, `as_symbol()`, `as_i64()`, `as_u64()`, `as_f64()`, `as_bool()`, `as_slice()`, `as_map()`, `as_expr()`.
+- **Shorthand field getters on `Data`, `ExprData`, `MapData`**: `get_str(k)`, `get_symbol(k)`, `get_i64(k)`, `get_u64(k)`, `get_f64(k)`, `get_bool(k)`, `get_slice(k)`, `get_map(k)`, `get_expr(k)`.
 
 ## Usage Example
 
 ```rust
-use lisp_rpc_rust_parser::TypeValue;
-use lisp_rpc_rust_raw_data::{Data, IntoData};
+use lisp_rpc_rust_raw_data::Data;
 
-// Create a raw RPC data expression: (get-book :title "The Hobbit" :year 1937)
-let title = Data::Value(TypeValue::String("The Hobbit".into()));
-let rpc_data = Data::new(
-    "get-book",
-    [
-        ("title", &title as &dyn IntoData),
-        ("year", &1937_i32 as &dyn IntoData),
-    ].into_iter(),
-).unwrap();
+let raw = r#"
+;; Server configuration
+(server-config
+  :host "127.0.0.1"
+  :port 3000
+  :tls 'false
+  :bind '("127.0.0.1" "0.0.0.0")
+  :database (db-config :url "postgres://localhost/app" :pool-size 16))
+"#;
 
-// Serialize to S-expression string
-let raw_str = rpc_data.to_string();
-
-// Parse S-expression back to Data
-let parsed = Data::from_root_str(&raw_str, None).unwrap();
-let year = parsed.get("year").and_then(|d| d.to_int());
+let cfg: Data<'static> = raw.parse().unwrap();
+assert_eq!(cfg.name(), Some("server-config"));
+assert_eq!(cfg.get_str("host"), Some("127.0.0.1"));
+assert_eq!(cfg.get_u64("port"), Some(3000));
+assert_eq!(cfg.get_bool("tls"), Some(false));
+assert_eq!(cfg.get_slice("bind").unwrap()[0].as_str(), Some("127.0.0.1"));
+assert_eq!(cfg.get_expr("database").unwrap().get_u64("pool-size"), Some(16));
 ```
+
+See [examples/config.rs](examples/config.rs) for a complete multi-section `.lisp` configuration example.
