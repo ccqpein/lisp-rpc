@@ -17,6 +17,20 @@ Serde-based serialization and deserialization for Lisp-RPC S-expressions.
 - ~LispRPCSerializer~ / ~LispRPCDeserializer~: Underlying Serde serializer and deserializer engines.
 - ~register_global_map_type(name)~ / ~clear_global_map_types()~: Configure specific struct names to serialize as quoted anonymous maps ='(:field value ...)= instead of named structs =(name :field value ...)=.
 
+* Serde Mapping Rules
+
+| Rust Type                                   | Serialized Lisp-RPC             | Accepted on Deserialize                                                |
+|---------------------------------------------+---------------------------------+------------------------------------------------------------------------|
+| =struct FooBar { max_conn: i32 }=             | =(foo-bar :max-conn 10)=          | =(foo-bar :max-conn 10)= or ='(:max-conn 10)=                              |
+| =bool= (=true= / =false=)                       | =t= / =nil=                         | =t= / =nil= (unquoted)                                                   |
+| =Option<T>= (=Some(x)= / =None=)                | =x= / =nil=                         | =x=, =nil=, or omitted key                                               |
+| =#[serde(default)]= field                     | serialized normally             | omitted key uses =Default= (avoid passing =nil= for non-=Option= types)    |
+| =Vec<T>= (scalars)                            | ='("a" "b")=                      | ='("a" "b")=                                                             |
+| =Vec<Struct>=                                 | ='((item :id 1) (item :id 2))=    | ='((item :id 1) (item :id 2))=                                           |
+| Unit =enum= variant (=Status::InProgress=)      | /(unsupported on serialize)/    | Quoted kebab-case symbol ='in-progress=                                  |
+
+*Important — Do NOT add =#[serde(rename_all = "kebab-case")]*= : ~LispRPCSerializer~ and ~LispRPCDeserializer~ automatically convert between Rust =PascalCase=/=snake_case= and Lisp-RPC =kebab-case=. Adding =#[serde(rename_all = "kebab-case")]= breaks deserialization because ~LispRPCDeserializer~ normalizes =:kebab-case= keys back to =snake_case= before passing them to Serde.
+
 * Usage Example
 
 #+begin_src rust
@@ -27,17 +41,24 @@ use serde::{Deserialize, Serialize};
 struct BookInfo {
     title: String,
     year: i32,
+    in_stock: bool,
+    #[serde(default)]
+    subtitle: Option<String>,
 }
 
-// Serialize a Rust struct into a Lisp-RPC S-expression string
 let book = BookInfo {
     title: "The Hobbit".to_string(),
     year: 1937,
+    in_stock: true,
+    subtitle: None,
 };
 let s = lisp_rpc_to_str(&book).unwrap();
-assert_eq!(s, r#"(book-info :title "The Hobbit" :year 1937)"#);
+assert_eq!(s, r#"(book-info :title "The Hobbit" :year 1937 :in-stock t :subtitle nil)"#);
 
-// Deserialize a Lisp-RPC S-expression string back into a Rust struct
 let decoded: BookInfo = lisp_rpc_from_str(&s).unwrap();
 assert_eq!(decoded, book);
 #+end_src
+
+* Config Files with Comments
+
+~lisp_rpc_from_str~ parses raw S-expression tokens directly without skipping =;= comments. See [[file:examples/config.rs][examples/config.rs]] for loading commented =.lisp= config files into Serde structs with =#[serde(default)]= and nested blocks.
