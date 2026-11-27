@@ -8,21 +8,77 @@
 //! - [`ExprData<'a>`]: Named S-expression data structure `(name :key value ...)`.
 //! - [`ListData<'a>`]: Quoted sequence `'("a" 1 2)`.
 //! - [`MapData<'a>`]: Quoted key-value map `'(:k1 v1 :k2 v2)`.
-//! - [`files::DataFile`]: Parses and indexes multiple [`ExprData`] records from a file.
+//! - [`files::DataFile`]: Parses and indexes multiple [`ExprData`] records from a file or string.
 //! - [`RawDataGenerator`]: Asynchronous stream adapter transforming byte streams into [`Data<'static>`].
 //!
-//! # Quick Start
+//! # Quick Start (Parsing, Tag Inspection, Keyword Lookup & Typed Getters)
+//!
+//! - Parse owned `Data<'static>` directly with `str::parse::<Data>()` (automatically skips `;` / `;;` comments).
+//! - For zero-copy borrowed parsing, use [`Data::from_root_str`] or [`FromStr::from_str`].
+//! - **Keyword lookup rule**: [`Data::get`] and `get_*` helpers take the keyword name **without** the leading `:`
+//!   (pass `"port"`, **not** `":port"`).
+//!
+//! ```rust
+//! use lisp_rpc_rust_raw_data::Data;
+//!
+//! let config_src = r#"
+//! ;; Application server configuration
+//! (server-config
+//!   :host "127.0.0.1"
+//!   :port 3000
+//!   :tls t
+//!   :rate-limit 12.5
+//!   :mode 'production
+//!   :bind '("127.0.0.1" "0.0.0.0")
+//!   :meta '(:env "prod" :debug 'false)
+//!   :database (db-config :url "postgres://localhost/app" :pool-size 16))
+//! "#;
+//!
+//! // 1. Parse multi-line S-expression with comments into Data<'static>
+//! let cfg: Data<'static> = config_src.parse().unwrap();
+//!
+//! // 2. Inspect the structure name/tag
+//! assert_eq!(cfg.name(), Some("server-config"));
+//!
+//! // 3. Keyword lookup uses the key name WITHOUT leading ':'
+//! assert!(cfg.get("port").is_some());
+//! assert!(cfg.get(":port").is_none());
+//!
+//! // 4. Typed extractors on Data and shorthand get_* helpers
+//! assert_eq!(cfg.get_str("host"), Some("127.0.0.1"));
+//! assert_eq!(cfg.get_i64("port"), Some(3000));
+//! assert_eq!(cfg.get_u64("port"), Some(3000));
+//! assert_eq!(cfg.get_bool("tls"), Some(true));
+//! assert_eq!(cfg.get_f64("rate-limit"), Some(12.5));
+//! assert_eq!(cfg.get_symbol("mode"), Some("production"));
+//!
+//! // 5. Traverse quoted lists, quoted anonymous maps, and nested named structures
+//! let bind = cfg.get_slice("bind").unwrap();
+//! assert_eq!(bind[0].as_str(), Some("127.0.0.1"));
+//! assert_eq!(bind[1].as_str(), Some("0.0.0.0"));
+//!
+//! let meta = cfg.get_map("meta").unwrap();
+//! assert_eq!(meta.get_str("env"), Some("prod"));
+//! assert_eq!(meta.get_bool("debug"), Some(false));
+//!
+//! let db = cfg.get_expr("database").unwrap();
+//! assert_eq!(db.get_name(), "db-config");
+//! assert_eq!(db.get_str("url"), Some("postgres://localhost/app"));
+//! assert_eq!(db.get_u64("pool-size"), Some(16));
+//! ```
+//!
+//! # Zero-Copy Borrowed Parsing & Dynamic Construction
 //!
 //! ```rust
 //! use lisp_rpc_rust_parser::{Parser, TypeValue};
 //! use lisp_rpc_rust_raw_data::{Data, FromStr, IntoData};
 //!
-//! // Parse a borrowed Data<'a> directly from a string slice
+//! // Borrowed parsing (avoids allocating string slices)
 //! let mut parser = Parser::new();
 //! let input = r#"(person :name "Alice" :age 30)"#;
-//! let data = Data::from_str(&mut parser, input).unwrap();
-//! assert_eq!(data.get("name").unwrap().get_string().unwrap(), "Alice");
-//! assert_eq!(data.get("age").unwrap().to_int(), Some(30));
+//! let data = <Data as FromStr>::from_str(&mut parser, input).unwrap();
+//! assert_eq!(data.get_str("name"), Some("Alice"));
+//! assert_eq!(data.get_i64("age"), Some(30));
 //!
 //! // Construct a new owned Data<'static> dynamically
 //! let name_val = Data::Value(TypeValue::String("Alice".into()));
@@ -37,7 +93,19 @@
 //! .unwrap();
 //! assert_eq!(built.to_string(), input);
 //! ```
-#![feature(iter_array_chunks)]
+//!
+//! # Quoting & Literal Rules in `raw-data`
+//!
+//! | Form | Representation | Notes |
+//! | --- | --- | --- |
+//! | `(record :k v)` | [`Data::Data`] ([`ExprData`]) | Named structure — **never** quoted |
+//! | `'(:k v)` | [`Data::Map`] ([`MapData`]) | Anonymous map — **must** be quoted |
+//! | `'(a b c)` | [`Data::List`] ([`ListData`]) | Sequence — **must** be quoted |
+//! | `t` / `T` | `Data::Value(Symbol("t"))` | Boolean `true` (`as_bool() == Some(true)`) |
+//! | `'false` | `Data::Value(Symbol("false"))` | Explicit boolean `false` symbol (`as_bool() == Some(false)`) |
+//! | `:k nil` | *(omitted key)* | Unquoted `nil` in `ExprData`/`MapData` omits `:k` as absent (`get("k") == None`) |
+//! | `:k 'nil` | `Data::Value(Symbol("nil"))` | Quoted `'nil` preserves the key (`as_symbol() == Some("nil")`) |
+//! | `; ...` | *(ignored)* | Line comments are skipped when parsing [`ExprData`] and [`files::DataFile`] |
 
 pub mod files;
 mod macros;
@@ -88,9 +156,7 @@ pub trait FromStr<'a>: FromExpr<'a> {
     where
         Self: Sized,
     {
-        let expr = p
-            .parse_str_one(s)?
-            .context("Cannot get the last expr")?;
+        let expr = p.parse_str_one(s)?.context("Cannot get the last expr")?;
         Self::from_expr(&expr)
     }
 }
@@ -106,12 +172,6 @@ impl_into_data_for_numbers_int!(i8, i16, i32, i64);
 
 // impl the into data for several type
 impl_into_data_for_numbers_float!(f32, f64);
-
-/// Trait for data structures that support key-based field lookups.
-pub trait GetAbleData<'a> {
-    /// Retrieves a reference to the [`Data`] field matching the given key name.
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>>;
-}
 
 /// Returns `true` if the given expression is a symbol representing `nil`.
 #[inline]
@@ -311,7 +371,7 @@ impl<'a> Data<'a> {
         self.as_value().and_then(|tv| tv.to_float())
     }
 
-    /// Retrieves a field value by its keyword name.
+    /// Retrieves a field value by its keyword name (without a leading `:`).
     pub fn get(&self, k: &str) -> Option<&Data<'a>> {
         match self {
             Data::Data(expr_data) => expr_data.get(k),
@@ -319,6 +379,143 @@ impl<'a> Data<'a> {
             _ => None,
         }
     }
+
+    /// Returns the structure name/tag if this is a [`Data::Data`] (e.g. `"server"` for `(server :port 8080)`).
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Data::Data(expr_data) => Some(expr_data.get_name()),
+            _ => None,
+        }
+    }
+
+    /// Returns a reference to the inner [`ExprData`] if this is a [`Data::Data`].
+    pub fn as_expr(&self) -> Option<&ExprData<'a>> {
+        match self {
+            Data::Data(expr_data) => Some(expr_data),
+            _ => None,
+        }
+    }
+
+    /// Returns a reference to the inner [`MapData`] if this is a [`Data::Map`].
+    pub fn as_map(&self) -> Option<&MapData<'a>> {
+        match self {
+            Data::Map(map_data) => Some(map_data),
+            _ => None,
+        }
+    }
+
+    /// Returns a reference to the inner [`ListData`] if this is a [`Data::List`].
+    pub fn as_list(&self) -> Option<&ListData<'a>> {
+        match self {
+            Data::List(list_data) => Some(list_data),
+            _ => None,
+        }
+    }
+
+    /// Returns a slice of elements if this is a [`Data::List`].
+    pub fn as_slice(&self) -> Option<&[Data<'a>]> {
+        self.as_list().map(ListData::as_slice)
+    }
+
+    /// Returns the borrowed string slice if this is a [`Data::Value`] containing [`TypeValue::String`].
+    pub fn as_str(&self) -> Option<&str> {
+        match self.as_value() {
+            Some(TypeValue::String(s)) => Some(s.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Returns the borrowed symbol name if this is a [`Data::Value`] containing [`TypeValue::Symbol`].
+    pub fn as_symbol(&self) -> Option<&str> {
+        match self.as_value() {
+            Some(TypeValue::Symbol(s)) => Some(s.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Returns the integer value as `i64` if this is a [`Data::Value`] containing an integer.
+    pub fn as_i64(&self) -> Option<i64> {
+        self.to_int()
+    }
+
+    /// Returns the integer value as `u64` if this is a non-negative integer [`Data::Value`].
+    pub fn as_u64(&self) -> Option<u64> {
+        self.to_int().and_then(|n| u64::try_from(n).ok())
+    }
+
+    /// Returns the floating-point value as `f64` if this is a numeric [`Data::Value`].
+    pub fn as_f64(&self) -> Option<f64> {
+        self.to_float()
+    }
+
+    /// Returns the boolean value if this is a boolean symbol (`t`/`true` or `nil`/`false`, case-insensitive).
+    pub fn as_bool(&self) -> Option<bool> {
+        match self.as_value() {
+            Some(TypeValue::Symbol(s)) => {
+                if s.eq_ignore_ascii_case("t") || s.eq_ignore_ascii_case("true") {
+                    Some(true)
+                } else if s.eq_ignore_ascii_case("nil") || s.eq_ignore_ascii_case("false") {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+macro_rules! impl_typed_getters {
+    () => {
+        /// Looks up key `k` (without leading `:`) and extracts a string slice.
+        pub fn get_str(&self, k: &str) -> Option<&str> {
+            self.get(k).and_then(Data::as_str)
+        }
+
+        /// Looks up key `k` (without leading `:`) and extracts a symbol name.
+        pub fn get_symbol(&self, k: &str) -> Option<&str> {
+            self.get(k).and_then(Data::as_symbol)
+        }
+
+        /// Looks up key `k` (without leading `:`) and extracts an `i64`.
+        pub fn get_i64(&self, k: &str) -> Option<i64> {
+            self.get(k).and_then(Data::as_i64)
+        }
+
+        /// Looks up key `k` (without leading `:`) and extracts a non-negative `u64`.
+        pub fn get_u64(&self, k: &str) -> Option<u64> {
+            self.get(k).and_then(Data::as_u64)
+        }
+
+        /// Looks up key `k` (without leading `:`) and extracts an `f64`.
+        pub fn get_f64(&self, k: &str) -> Option<f64> {
+            self.get(k).and_then(Data::as_f64)
+        }
+
+        /// Looks up key `k` (without leading `:`) and extracts a `bool`.
+        pub fn get_bool(&self, k: &str) -> Option<bool> {
+            self.get(k).and_then(Data::as_bool)
+        }
+
+        /// Looks up key `k` (without leading `:`) and extracts a list slice.
+        pub fn get_slice(&self, k: &str) -> Option<&[Data<'a>]> {
+            self.get(k).and_then(Data::as_slice)
+        }
+
+        /// Looks up key `k` (without leading `:`) and extracts a nested [`MapData`].
+        pub fn get_map(&self, k: &str) -> Option<&MapData<'a>> {
+            self.get(k).and_then(Data::as_map)
+        }
+
+        /// Looks up key `k` (without leading `:`) and extracts a nested [`ExprData`].
+        pub fn get_expr(&self, k: &str) -> Option<&ExprData<'a>> {
+            self.get(k).and_then(Data::as_expr)
+        }
+    };
+}
+
+impl<'a> Data<'a> {
+    impl_typed_getters!();
 }
 
 impl Data<'static> {
@@ -364,9 +561,16 @@ impl<'a> IntoData for Data<'a> {
     }
 }
 
-impl<'a> GetAbleData<'a> for Data<'a> {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
-        self.get(k)
+impl std::str::FromStr for Data<'static> {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let exprs = Parser::new().parse_str_all(s)?;
+        let first = exprs
+            .iter()
+            .find(|e| !e.is_comment())
+            .context("no S-expression found in input")?;
+        Ok(Data::from_expr(first)?.into_owned())
     }
 }
 
@@ -420,7 +624,7 @@ impl<'a> ExprData<'a> {
         };
 
         let mut rest_a = Vec::with_capacity((count - 1) / 2);
-        for [k, v] in iter.array_chunks() {
+        while let (Some(k), Some(v)) = (iter.next(), iter.next()) {
             match k {
                 Expr::Atom(Atom {
                     value: TypeValue::Keyword(_),
@@ -500,12 +704,37 @@ impl<'a> ExprData<'a> {
         buf
     }
 
-    /// Retrieves a field value by its keyword name.
+    /// Retrieves a field value by its keyword name (without a leading `:`).
     pub fn get(&self, k: &str) -> Option<&Data<'a>> {
         let m = self
             .inner_map
             .get_or_init(|| DataMap::new(&self.rest_args).unwrap());
         m.get(k)
+    }
+
+    /// Returns the number of non-nil keyword-value pairs in this expression.
+    pub fn len(&self) -> usize {
+        self.rest_args.len()
+    }
+
+    /// Returns `true` if this expression has no keyword-value pairs.
+    pub fn is_empty(&self) -> bool {
+        self.rest_args.is_empty()
+    }
+
+    impl_typed_getters!();
+}
+
+impl std::str::FromStr for ExprData<'static> {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let exprs = Parser::new().parse_str_all(s)?;
+        let first = exprs
+            .iter()
+            .find(|e| !e.is_comment())
+            .context("no S-expression found in input")?;
+        Ok(ExprData::from_expr(first)?.into_owned())
     }
 }
 
@@ -523,12 +752,6 @@ impl<'a> FromStr<'a> for ExprData<'a> {}
 impl<'a> IntoData for ExprData<'a> {
     fn into_rpc_data(&self) -> Data<'static> {
         Data::Data(self.clone().into_owned())
-    }
-}
-
-impl<'a> GetAbleData<'a> for ExprData<'a> {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
-        self.get(k)
     }
 }
 
@@ -638,6 +861,16 @@ impl<'a> ListData<'a> {
     pub fn len(&self) -> usize {
         self.inner_data.len()
     }
+
+    /// Returns `true` if the list contains no elements.
+    pub fn is_empty(&self) -> bool {
+        self.inner_data.is_empty()
+    }
+
+    /// Returns the elements of this list as a slice.
+    pub fn as_slice(&self) -> &[Data<'a>] {
+        &self.inner_data
+    }
 }
 
 impl<'t, 'a> IntoIterator for &'t ListData<'a> {
@@ -676,7 +909,8 @@ impl<'a> MapData<'a> {
                     let cap = ee.len() / 2;
                     let mut kwrds = Vec::with_capacity(cap);
                     let mut table = HashMap::with_capacity(cap);
-                    for [k, v] in ee.iter().array_chunks() {
+                    for chunk in ee.chunks_exact(2) {
+                        let [k, v] = chunk else { unreachable!() };
                         match (k, v) {
                             (
                                 Expr::Atom(Atom {
@@ -716,7 +950,6 @@ impl<'a> MapData<'a> {
             })),
         }
     }
-
 
     /// Converts this map into a `'static` owned variant.
     pub fn into_owned(self) -> MapData<'static> {
@@ -776,6 +1009,13 @@ impl<'a> MapData<'a> {
     pub fn len(&self) -> usize {
         self.map.len()
     }
+
+    /// Returns `true` if the map contains no key-value pairs.
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    impl_typed_getters!();
 }
 
 impl<'a> FromExpr<'a> for MapData<'a> {
@@ -792,12 +1032,6 @@ impl<'a> FromStr<'a> for MapData<'a> {}
 impl<'a> IntoData for MapData<'a> {
     fn into_rpc_data(&self) -> Data<'static> {
         Data::Map(self.clone().into_owned())
-    }
-}
-
-impl<'a> GetAbleData<'a> for MapData<'a> {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
-        self.get(k)
     }
 }
 
@@ -866,6 +1100,11 @@ impl<'a> DataMap<'a> {
     /// Returns the number of entries in the map.
     pub fn len(&self) -> usize {
         self.hash_map.len()
+    }
+
+    /// Returns `true` if the map contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.hash_map.is_empty()
     }
 
     /// Converts this map into a `'static` owned [`DataMap<'static>`].

@@ -17,9 +17,13 @@ impl DataFile {
     pub fn new(file: PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(&file)
             .map_err(|e| anyhow::anyhow!("Failed to open config file at {:?}: {}", file, e))?;
+        Self::from_str_content(&content)
+    }
 
+    /// Parses all top-level [`ExprData`] records from an in-memory string (skipping `;` comments).
+    pub fn from_str_content(content: &str) -> Result<Self> {
         let parser: lisp_rpc_rust_parser::Parser = Default::default();
-        let exprs = parser.parse_str_all(&content)?;
+        let exprs = parser.parse_str_all(content)?;
 
         let mut df = DataFile {
             datas: Vec::with_capacity(exprs.len()),
@@ -70,5 +74,13 @@ impl IntoIterator for DataFile {
 
     fn into_iter(self) -> Self::IntoIter {
         self.datas.into_iter()
+    }
+}
+
+impl std::str::FromStr for DataFile {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Self::from_str_content(s)
     }
 }

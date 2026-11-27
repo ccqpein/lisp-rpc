@@ -14,7 +14,8 @@ Lisp-RPC combines the human readability of text-based formats with the strong ty
 
 * Specification
 
-Read the [[https://lisp-rpc.ccqpein.me][Lisp-RPC Specification]].
+- Read the specification on [[https://lisp-rpc.ccqpein.me][lisp-rpc.ccqpein.me]] (source: [[https://github.com/ccqpein/lisp-rpc-doc/blob/master/Spec.org][Spec.org]]).
+- For LLMs and coding agents: [[https://lisp-rpc.ccqpein.me/llms.txt][llms.txt]] and [[https://lisp-rpc.ccqpein.me/llms-full.txt][llms-full.txt]].
 
 * Related Repositories
 
@@ -106,9 +107,26 @@ Check [[file:examples/rust/serialize-struct-to-lisprpc/][this example]] for more
 
 ** Handling Plain Mode
 
-~lisp_rpc_rust_raw_data::Data~ can parse a string directly into a ~Data~ object, which can then be accessed using ~.get(keyname)~.
+~lisp_rpc_rust_raw_data::Data~ can parse a string directly via ~.parse::<Data>()~ (or ~Data::from_root_str~), inspect its tag with ~.name()~, and look up fields using ~.get("key")~ (without leading ~:~) or typed helpers like ~.get_str("key")~ and ~.get_i64("key")~.
 
 Check [[file:examples/rust/plain-mode-read-and-write-data/][this example]] for more details.
+
+** Lisp-RPC as a Config File Format
+
+Lisp-RPC Plain Mode works cleanly as a human-readable, commentable configuration format with nested sub-blocks and typed extraction:
+
+#+begin_src lisp
+  ;; Application configuration (app.lisp)
+  (server-config
+    :host "127.0.0.1"
+    :port 8080
+    :tls 'false
+    :tags '("api" "v2")
+    :database (db-config :host "db.internal" :pool-size 16))
+#+end_src
+
+- Dynamic AST / multi-section config with =;;= comments: [[file:raw-data/lisp-rpc-rust-raw-data/examples/config.rs][raw-data/lisp-rpc-rust-raw-data/examples/config.rs]]
+- Typed Serde config with =#[serde(default)]= and nested structs: [[file:serializer/examples/config.rs][serializer/examples/config.rs]]
 
 ** Spec & Code Generation Mode
 
