@@ -173,12 +173,6 @@ impl_into_data_for_numbers_int!(i8, i16, i32, i64);
 // impl the into data for several type
 impl_into_data_for_numbers_float!(f32, f64);
 
-/// Trait for data structures that support key-based field lookups.
-pub trait GetAbleData<'a> {
-    /// Retrieves a reference to the [`Data`] field matching the given key name.
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>>;
-}
-
 /// Returns `true` if the given expression is a symbol representing `nil`.
 #[inline]
 pub fn is_nil_symbol(e: &Expr<'_>) -> bool {
@@ -567,12 +561,6 @@ impl<'a> IntoData for Data<'a> {
     }
 }
 
-impl<'a> GetAbleData<'a> for Data<'a> {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
-        self.get(k)
-    }
-}
-
 impl std::str::FromStr for Data<'static> {
     type Err = anyhow::Error;
 
@@ -764,12 +752,6 @@ impl<'a> FromStr<'a> for ExprData<'a> {}
 impl<'a> IntoData for ExprData<'a> {
     fn into_rpc_data(&self) -> Data<'static> {
         Data::Data(self.clone().into_owned())
-    }
-}
-
-impl<'a> GetAbleData<'a> for ExprData<'a> {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
-        self.get(k)
     }
 }
 
@@ -1050,12 +1032,6 @@ impl<'a> FromStr<'a> for MapData<'a> {}
 impl<'a> IntoData for MapData<'a> {
     fn into_rpc_data(&self) -> Data<'static> {
         Data::Map(self.clone().into_owned())
-    }
-}
-
-impl<'a> GetAbleData<'a> for MapData<'a> {
-    fn get<'s>(&'s self, k: &'_ str) -> Option<&'s Data<'a>> {
-        self.get(k)
     }
 }
 
